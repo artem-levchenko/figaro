@@ -84,7 +84,7 @@ gives every test client the right one, and Figma's User-Agent (`FIGMA_UA`), whic
 removes the header from `client.session.headers`. Run a third-party script against a bridge with
 `-H "X-Figaro-Token: $(cat ~/.figaro/token-8788)"`.
 
-CI (`.github/workflows/tests.yml`) runs pytest on Linux and Windows with Python 3.9 and 3.13, the Node tests,
+CI (`.github/workflows/tests.yml`) runs pytest on Linux and Windows with Python 3.9 and 3.14, the Node tests,
 and both installers; nothing else tests Windows, so check the run after changing anything it touches. A push
 that changes only `*.md` or `assets/` runs no tests. Keep a parametrized test's id short: on Windows pytest
 puts it in the `PYTEST_CURRENT_TEST` variable, which takes at most 32767 characters.

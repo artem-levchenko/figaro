@@ -628,7 +628,8 @@ new Function("figma", "h", "print", "return (async () => {" + body + "})();")(fi
 def run_rm(monkeypatch, capsys, *ids, selection=()):
     code = cli(monkeypatch, capsys, "rm", *ids)[3][0]["code"]
     stub = f"const SELECTION = {json.dumps(list(selection))};" + RM_STUB % json.dumps(code)
-    r = subprocess.run(["node", "-e", stub], capture_output=True, encoding="utf-8", timeout=30)
+    # 120 s: on a Windows runner `node` once took more than 30 s to start
+    r = subprocess.run(["node", "-e", stub], capture_output=True, encoding="utf-8", timeout=120)
     return json.loads(r.stdout)
 
 
