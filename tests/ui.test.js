@@ -366,6 +366,8 @@ const RELEASE = "https://github.com/artem-levchenko/figaro/releases/tag/v1.2.0";
         (html.match(/html\.rainbow \.px i:nth-child\(\d\)/g) || []).length, 9);
   check("an island is never wider than the window, however long the names in its row",
         /\n\.island \{[^}]*\bmin-width: 0;[^}]*overflow: clip;/.test(html), true);
+  check("a layer's name in its chip keeps the tails of g, p and y: its box is taller than the 11 px letters",
+        /\n\.layer span \{[^}]*\boverflow: hidden;[^}]*\bline-height: 14px;/.test(html) && /\n\.layer \{[^}]*height: 20px;/.test(html), true);
   {
     const env = load();
     const ago = (sec) => 1000 + env.clock.now() / 1000 - sec;  // the bridge's time, `sec` seconds ago

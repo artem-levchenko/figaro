@@ -289,7 +289,7 @@ button.layer { cursor: pointer; }
 button.layer:hover { background: color-mix(in srgb, var(--run) var(--is-tint), transparent); }
 .layer.gone { opacity: .45; }
 .layer.gone span { text-decoration: line-through; }
-.layer span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.layer span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: 14px; }  /* taller than the letters: g, p and y keep their tails */
 .layer svg { width: 12px; height: 12px; flex: none; color: var(--is-dim); }
 .layer.comp svg { color: var(--is-comp); }
 .more { align-self: center; padding: 0 2px; color: var(--is-faint); font-size: 11px; }
