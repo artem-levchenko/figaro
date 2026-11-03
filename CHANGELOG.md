@@ -9,6 +9,16 @@ file; the release notes say when it has to be imported again.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Figaro lives at github.com/artem-levchenko/figaro.** The repository's old address,
+  github.com/artem-levchenko-2/figaro, worked only through GitHub's redirect, which lasts only while no other
+  repository takes that name. Now the release check, the window's links and the README use the new one; the
+  window opens a link that an older bridge still sends with the old address at the new one; and the window's
+  Update points a clone of the old address at the new one before it pulls the release (forks and other
+  remotes stay as they are). To move a clone by hand, run this in Figaro's folder:
+  `git remote set-url origin https://github.com/artem-levchenko/figaro.git`.
+
 ## [1.9.1] — 2026-10-30
 
 ### Fixed

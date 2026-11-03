@@ -11,6 +11,7 @@ const src = fs.readFileSync(path, "utf8");
 function load(fileKey) {
   const writes = [];
   const posted = [];
+  const opened = [];
   const record = (name) => (...args) => { writes.push([name, ...args]); };
   const figma = {
     root: {
@@ -22,6 +23,7 @@ function load(fileKey) {
       setRelaunchData: record("setRelaunchData"),
     },
     showUI() {},
+    openExternal(url) { opened.push(url); },
     ui: { onmessage: null, postMessage(m) { posted.push(m); } },
     currentPage: { selection: [] },
     variables: {},
@@ -33,7 +35,7 @@ function load(fileKey) {
     figma.fileKey = fileKey;
   }
   const api = new Function("figma", "__html__", src + "\nreturn { docSignature };")(figma, "");
-  return { api, writes, identity: posted.find((m) => m.type === "identity") };
+  return { api, writes, figma, opened, identity: posted.find((m) => m.type === "identity") };
 }
 
 let failed = 0;
@@ -61,6 +63,22 @@ check("nothing written without a key", bare.writes, []);
 const throwing = load(new Error("fileKey is not available"));
 check("throwing fileKey falls back to a run id", /^r[0-9a-z]+$/.test(throwing.identity.docSig), true);
 check("nothing written when fileKey throws", throwing.writes, []);
+
+// The window opens only the project's pages on GitHub. A bridge from before the
+// repository moved sends its old address, which GitHub only redirects: the new one opens.
+const linked = load("AbCdEf0123456789xyzKey");
+for (const url of [
+  "https://github.com/artem-levchenko/figaro/releases/tag/v1.9.2",
+  "https://github.com/artem-levchenko-2/figaro/releases/tag/v1.9.1",
+  "https://github.com/artem-levchenko-2/figaro-fork/releases",
+  "https://github.com/artem-levchenko/figaro.example.com/",
+  "https://example.com/artem-levchenko/figaro/",
+  42,
+]) linked.figma.ui.onmessage({ type: "open-url", url });
+check("release links open the project's pages only, the old address as the new", linked.opened, [
+  "https://github.com/artem-levchenko/figaro/releases/tag/v1.9.2",
+  "https://github.com/artem-levchenko/figaro/releases/tag/v1.9.1",
+]);
 
 console.log(failed ? `\n${failed} FAILED` : "\nall plugin checks passed");
 process.exit(failed ? 1 : 0);

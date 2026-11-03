@@ -819,6 +819,51 @@ def test_pull_release_gets_past_an_old_tag_moved_on_github(tmp_path):
     assert why == "no such release" and "v1.2.0" in detail
 
 
+@pytest.mark.parametrize("url, moved", [
+    ("https://github.com/artem-levchenko-2/figaro.git", "https://github.com/artem-levchenko/figaro.git"),
+    ("https://github.com/artem-levchenko-2/figaro", "https://github.com/artem-levchenko/figaro"),
+    ("https://github.com/Artem-Levchenko-2/figaro/\n", "https://github.com/artem-levchenko/figaro"),
+    ("git@github.com:artem-levchenko-2/figaro.git", "git@github.com:artem-levchenko/figaro.git"),
+    ("ssh://git@github.com/artem-levchenko-2/figaro.git", "ssh://git@github.com/artem-levchenko/figaro.git"),
+    ("https://github.com/artem-levchenko/figaro.git", None),
+    ("https://github.com/someone/figaro.git", None),
+    ("https://github.com/artem-levchenko-2/figaro-fork.git", None),
+    ("/home/me/figaro.git", None),
+], ids=["https", "bare", "case", "scp", "ssh", "new", "fork", "other", "path"])
+def test_moved_origin(url, moved):
+    assert bridge_update.moved_origin(url) == moved
+
+
+def test_pull_release_moves_a_clone_of_the_old_address(tmp_path):
+    # GitHub redirects the repository's old address only while no repository takes
+    # that name again: an update points a clone of it at the new one, then fetches.
+    origin, work, figaro = tmp_path / "origin.git", tmp_path / "work", tmp_path / "figaro"
+    _git(tmp_path, "init", "--bare", str(origin))
+    _git(tmp_path, "clone", str(origin), str(work))
+    _git(work, "symbolic-ref", "HEAD", "refs/heads/main")
+    (work / "a.txt").write_text("1\n")
+    _git(work, "add", ".")
+    _git(work, "commit", "-m", "1")
+    _git(work, "tag", "v1.0.0")
+    _git(work, "push", "-u", "origin", "main", "v1.0.0")
+    _git(tmp_path, "clone", "-b", "main", str(origin), str(figaro))
+    old, new = "https://github.com/artem-levchenko-2/figaro.git", "https://github.com/artem-levchenko/figaro.git"
+    _git(figaro, "remote", "set-url", "origin", old)
+    # No network: the new address leads to the local repository, the old one nowhere.
+    _git(figaro, "config", f"url.{origin.as_posix()}.insteadOf", new)
+    _git(figaro, "config", f"url.{(tmp_path / 'nowhere').as_posix()}.insteadOf", old)
+    (work / "a.txt").write_text("2\n")
+    _git(work, "commit", "-am", "2")
+    _git(work, "tag", "v1.0.1")
+    _git(work, "push", "origin", "main", "v1.0.1")
+
+    assert run(bridge_update.pull_release("1.0.1", figaro)) is None
+    assert (figaro / "a.txt").read_text() == "2\n"
+    url = subprocess.run(["git", "config", "--get", "remote.origin.url"], cwd=str(figaro),
+                         capture_output=True, text=True, check=True).stdout.strip()
+    assert url == new
+
+
 @pytest.mark.parametrize("out, why", [
     ("Updating 1..2\nerror: Your local changes to the following files would be overwritten by merge:",
      "local changes"),

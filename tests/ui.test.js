@@ -283,7 +283,7 @@ function check(label, actual, expected) {
 
 const MIN = 60 * 1000;
 const L = 28;  // the last line under the islands, always there
-const RELEASE = "https://github.com/artem-levchenko-2/figaro/releases/tag/v1.2.0";
+const RELEASE = "https://github.com/artem-levchenko/figaro/releases/tag/v1.2.0";
 
 (async () => {
   // ─── scripts keep it up ─────────────────────────────────────────────────

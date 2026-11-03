@@ -136,7 +136,11 @@ def bridge_outdated() -> bool:
 # "Unreleased" under the new version, tag vX.Y.Z and push the tag.
 
 VERSION = "1.9.1"
-REPO = "artem-levchenko-2/figaro"
+REPO = "artem-levchenko/figaro"
+# The repository's address until its owner's account was renamed (November
+# 2026). GitHub redirects it only while no repository takes that name again, so
+# an update moves a clone of it to REPO (bridge_update.moved_origin).
+MOVED_FROM = "artem-levchenko-2/figaro"
 UPDATE_EVERY = 6 * 60 * 60   # seconds between checks
 UPDATE: dict | None = None   # {"latest", "current", "url"} once a newer release exists
 SKIPPED: str | None = None   # the release the user skipped with the window's Skip (skip_release)

@@ -23,7 +23,7 @@ Everything runs on your computer.*
 
 [![Install](https://img.shields.io/badge/⬇_Install-a259ff?style=for-the-badge)](#install)
 [![First task](https://img.shields.io/badge/💬_First_task-1e1e1e?style=for-the-badge)](#your-first-task)
-[![Report a bug](https://img.shields.io/badge/🐞_Report_a_bug-1e1e1e?style=for-the-badge)](https://github.com/artem-levchenko-2/figaro/issues/new)
+[![Report a bug](https://img.shields.io/badge/🐞_Report_a_bug-1e1e1e?style=for-the-badge)](https://github.com/artem-levchenko/figaro/issues/new)
 [![Changelog](https://img.shields.io/badge/📋_Changelog-1e1e1e?style=for-the-badge)](CHANGELOG.md)
 
 </div>
@@ -86,7 +86,7 @@ on Linux.
 coding agent this line:
 
 ```text
-https://github.com/artem-levchenko-2/figaro — set this up for me
+https://github.com/artem-levchenko/figaro — set this up for me
 ```
 
 It installs the `figaro` command and the skill, as [AGENTS.md](AGENTS.md)
@@ -111,14 +111,14 @@ Your agent checks the connection with `figaro doctor`. That's all: give it its
 On macOS or Linux, in a terminal:
 
 ```sh
-git clone https://github.com/artem-levchenko-2/figaro.git ~/figaro
+git clone https://github.com/artem-levchenko/figaro.git ~/figaro
 bash ~/figaro/tools/install.sh
 ```
 
 On Windows, in PowerShell:
 
 ```powershell
-git clone https://github.com/artem-levchenko-2/figaro.git $HOME\figaro
+git clone https://github.com/artem-levchenko/figaro.git $HOME\figaro
 powershell -ExecutionPolicy Bypass -File $HOME\figaro\tools\install.ps1
 ```
 
@@ -636,6 +636,6 @@ Figaro is free software under the [MIT license](LICENSE).
 <br>
 
 Found a bug or missing something?
-[Open an issue](https://github.com/artem-levchenko-2/figaro/issues/new)
+[Open an issue](https://github.com/artem-levchenko/figaro/issues/new)
 
 </div>

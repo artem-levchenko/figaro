@@ -9,7 +9,7 @@ figma.showUI(__html__, { width: UI_WIDTH, height: 70, title: "Figaro Relay", the
 // disk and asks for a re-Run when they differ, because a running plugin keeps
 // the code it started with. Bump it on every change to plugin/ —
 // tests/test_plugin_version.py fails until you do.
-const PLUGIN_VERSION = "2026-10-30.1";
+const PLUGIN_VERSION = "2026-11-03.1";
 
 // What this build can do beyond a plain exec, so the bridge knows which
 // requests it may send (an older build gets `figaro reload` first).
@@ -609,8 +609,12 @@ figma.ui.onmessage = async (msg) => {
   if (msg.type === "need-identity") { postIdentity(); return; }
   if (msg.type === "open-url") {
     // The release page, when an update can't be done here. Only ever the project's GitHub pages.
-    if (typeof msg.url === "string" && msg.url.startsWith("https://github.com/artem-levchenko-2/figaro/")) {
-      figma.openExternal(msg.url);
+    // A bridge from before the repository moved sends its old address, which GitHub only
+    // redirects: the window opens the new one.
+    const url = typeof msg.url === "string" ? msg.url.replace(
+      /^https:\/\/github\.com\/artem-levchenko-2\/figaro\//, "https://github.com/artem-levchenko/figaro/") : "";
+    if (url.startsWith("https://github.com/artem-levchenko/figaro/")) {
+      figma.openExternal(url);
     }
     return;
   }

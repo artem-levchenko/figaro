@@ -44,7 +44,8 @@ venv/bin/python -m pytest -q             # bridge, board, update, CLI, queue, fu
 /usr/bin/python3 -m venv /tmp/figaro-py39 && /tmp/figaro-py39/bin/pip install -q -r requirements-dev.txt
 /tmp/figaro-py39/bin/python -m pytest -q # the same on macOS's own python3 (3.9), the oldest we support
 node tests/helpers.test.js               # pure helpers of plugin/code.js on a stub of Figma
-node tests/plugin.test.js                # the plugin writes nothing to the file; the document id is the fileKey
+node tests/plugin.test.js                # the plugin writes nothing to the file; the document id is the fileKey;
+                                         # the window opens only the project's pages, the old address as the new
 node tests/audit.test.js                 # h.audit: every rule flagged and quiet, the cap, the bounded walk, h.ck()
 node tests/exec.test.js                  # the exec core: change reports, Cmd+Z, read-only, undo, error lines
 node tests/commands.test.js              # links, quick reads, --lib, inspect, shot, fonts, auto-layout, find
@@ -134,7 +135,9 @@ Then read `run.jsonl` (commands, errors, the final report) and clean up what it 
   to the release and never past it (`git fetch --tags`, `git merge --ff-only vX.Y.Z`), reloads the plugins
   that run older code, restarts the bridge (`os.execv`; on Windows `start-bridge.ps1 -Restart`). Scripts sent
   during the pull or the restart get a 503 and run nothing; while it waits, they run, and it waits on. It
-  refuses an update with the button off or no newer release known.
+  refuses an update with the button off or no newer release known. A clone of the repository's old address
+  (`bridge.MOVED_FROM`, which GitHub only redirects) gets the new one, `REPO`, before the fetch
+  (`moved_origin`); other remotes, a fork's among them, stay.
 - `bridge_settings.py` — the window's settings, the bridge's for every window and kept in `settings.json` next
   to the token: Sounds (until switched, `FIGARO_SOUNDS`), Show other files, Show recent changes (`recent`;
   off: the islands show no Recent list), Reviewer (`reviewer`; off: no Reviewer row, no check on `figaro done` in any file), Save versions as agents work (off: no automatic

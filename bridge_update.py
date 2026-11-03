@@ -4,7 +4,8 @@
 (Reload, when this folder has newer code than what runs) come from any window.
 Both wait until no file runs a script. Then an update moves the Figaro folder
 to the release and nothing after it: `git fetch --tags`, then
-`git merge --ff-only vX.Y.Z`, and pip when requirements.txt changed. Then every
+`git merge --ff-only vX.Y.Z`, and pip when requirements.txt changed. A clone
+of the repository's old address gets the new one first (moved_origin). Then every
 plugin that runs older code gets the code on disk, and a bridge older than its
 files restarts in place. With FIGARO_UPDATE_BUTTON=off, or with no newer release
 known, the bridge refuses an update and pulls nothing.
@@ -20,6 +21,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -168,6 +170,7 @@ async def pull_release(version, folder: Path | None = None):
     req = folder / "requirements.txt"
     before = _read(req)
     git = ["git", "-C", str(folder)]
+    await _move_origin(git)
     # --force: without it the whole fetch fails when any local tag differs from
     # GitHub's, as in a clone older than a tag that was moved there (v1.1.0 was).
     code, out = await _run(git + ["fetch", "--tags", "--force"], 120)
@@ -186,6 +189,27 @@ async def pull_release(version, folder: Path | None = None):
         if code != 0:
             return "pip failed", "the new Python packages did not install: run the Figaro installer again"
     return None
+
+
+def moved_origin(url):
+    """The address a clone of the repository's old one (bridge.MOVED_FROM) moves
+    to, in the same form: https, ssh, with .git or without. None for any other."""
+    m = re.match(r"((?:https://|ssh://git@|git@)github\.com[/:])" + re.escape(bridge.MOVED_FROM)
+                 + r"(\.git)?/?$", url.strip(), re.I)
+    return m.group(1) + bridge.REPO + (m.group(2) or "") if m else None
+
+
+async def _move_origin(git):
+    """Point a clone of the old address at the new one before it fetches: the old
+    one works only through GitHub's redirect. Remotes the user set, a fork's
+    among them, stay as they are, and so does origin when git can't change it:
+    the fetch then goes through the redirect."""
+    code, out = await _run(git + ["config", "--get", "remote.origin.url"], 30)
+    new = moved_origin(out) if code == 0 else None
+    if new:
+        code, out = await _run(git + ["remote", "set-url", "origin", new], 30)
+        print(f"[update] origin is now {new}" if code == 0
+              else f"[update] origin stays at the old address: {_first_line(out)}", flush=True)
 
 
 # What git says -> the few words the window has room for.
