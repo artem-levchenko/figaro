@@ -54,8 +54,8 @@ auto-layout, styles and variables, and builds with them.
   the last one can be undone.
 - 👯&nbsp; **Several agents, several files.** Each file has its own queue, so
   agents working side by side never mix up their changes.
-- 🏠&nbsp; **It stays on your computer.** No Figma token, no account, no cloud:
-  a small local server and a plugin you import once.
+- 🏠&nbsp; **It stays on your computer.** No account, no cloud, no Figma token
+  needed: a small local server and a plugin you import once.
 
 Free and open source, on macOS, Windows and Linux.
 
@@ -595,6 +595,11 @@ scripts and the pictures it takes stay on your computer and in Figma.
   `FIGARO_NO_UPDATE_CHECK=1` turns it off. Figaro never updates itself: its
   code changes when you press **Update** or pull it yourself, and
   `FIGARO_UPDATE_BUTTON=off` takes that button away.
+- With a [Figma token](#settings), which only `figaro comments` needs, the
+  bridge also talks to Figma's REST API: when you save the token, to check it
+  on the open file's version history, and when an agent runs
+  `figaro comments`, to read that file's comments. Nothing else goes there,
+  and the token stays in `~/.figaro/figma-token`.
 
 ---
 
