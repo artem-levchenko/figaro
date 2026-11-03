@@ -219,7 +219,9 @@ Then read `run.jsonl` (commands, errors, the final report) and clean up what it 
   release. No squash: commits keep their authors.
 - **Changed a command, a helper or a behaviour — update the skill in the same commit.** `tests/test_install.py`
   checks that the skill names every CLI command. The installed skill is a symlink to `skill/figaro/`, so an
-  uncommitted edit there is live in every agent's session at once: don't leave it half done.
+  uncommitted edit there is live in every agent's session at once: don't leave it half done. The README too:
+  its list of commands names every command, and its Settings table has a row for every switch of the window's
+  settings (`tests/test_readme.py`).
 - **The skill is for any agent.** Claude Code, Codex, Cursor and others read the same `SKILL.md`, so it names
   no agent's own tools: "open the PNG", not "open it with Read".
 - **Any change to `plugin/code.js` or `plugin/ui.html`** → bump `PLUGIN_VERSION` in `plugin/code.js` (date
