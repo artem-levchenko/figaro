@@ -11,7 +11,9 @@ on:
 
 jobs:
   linux:
-    runs-on: ubuntu-latest
+    # Not ubuntu-latest: that is Ubuntu 26.04 since October 2026, and
+    # setup-python has no Python 3.9 for it.
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
