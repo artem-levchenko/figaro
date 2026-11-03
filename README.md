@@ -643,4 +643,8 @@ Figaro is free software under the [MIT license](LICENSE).
 Found a bug or missing something?
 [Open an issue](https://github.com/artem-levchenko/figaro/issues/new)
 
+A security problem? Please
+[report it privately](https://github.com/artem-levchenko/figaro/security/advisories/new),
+not in an issue.
+
 </div>
