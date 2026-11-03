@@ -9,6 +9,14 @@ file; the release notes say when it has to be imported again.
 
 ## [Unreleased]
 
+## [1.9.3] — 2026-11-03
+
+### Fixed
+
+- **A layer's name in the window shows the tails of g, p and y.** In Recent and in the Reviewer's notes, the
+  box of a layer's name was as tall as its letters, and it cut off their lower part: "Pricing" read as
+  "Pricinq".
+
 ## [1.9.2] — 2026-11-03
 
 ### Fixed
