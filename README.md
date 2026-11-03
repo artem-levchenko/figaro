@@ -28,7 +28,7 @@ Everything runs on your computer.*
 
 </div>
 
-![The Figaro window in Figma: two agents at work in this file, the pointer on one showing its Stop, one that is done with a note, what they changed, and agents in two other files](assets/hero.png)
+![The Figaro window in Figma: two agents at work in this file, the pointer on one showing its Stop, one that is done with a note, the Reviewer switched off, what they changed, and agents in two other files](assets/hero.png)
 
 ## Why
 
@@ -49,6 +49,9 @@ auto-layout, styles and variables, and builds with them.
 - 🧩&nbsp; **It builds the way your team does.** Real components and variants,
   your text styles and variables instead of hex codes, auto-layout instead of
   loose frames. The skill that comes with Figaro teaches the agent these rules.
+- 💬&nbsp; **It reads what your team left in the file.** Figma comments, each
+  with the layer it is pinned to, and Dev Mode annotations, which it can add
+  too.
 - 🛟&nbsp; **It is hard to break things.** Before the first change Figaro saves
   a version in the file's history, every script reports what it changed, and
   the last one can be undone.
@@ -323,6 +326,7 @@ Keep it running
   figaro status                   the bridge's raw state, as JSON
   figaro reload                   load new plugin code into a running plugin
   figaro done "Check the card"    done for now, with a note for you
+  figaro notes --wait             your answer to the Reviewer's notes, for the agent, once
   figaro wait                     wait until a file is connected, nothing stuck
   figaro clear                    free a file after a script ran out of time
 ```
@@ -478,7 +482,7 @@ and knocks twice when Figma stops answering in its own file.
 
 Everything works without settings.
 
-**In the plugin's window**, ⚙ on its last line shows four switches. They hold
+**In the plugin's window**, ⚙ on its last line shows five switches. They hold
 in every window and across restarts: the bridge keeps them in
 `~/.figaro/settings.json`.
 
@@ -487,6 +491,7 @@ in every window and across restarts: the bridge keeps them in
 | Sounds | on | The window's sounds for what you press, and its knock when Figma stops answering. The tone you can't hear, which keeps a background Figma quick, plays either way |
 | Show other files | on | Off: each window shows its own file's island, and other files only where Figma isn't answering |
 | Show recent changes | on | Off: an island lists its agents only, without what they changed lately |
+| Reviewer | on | The Reviewer, the last row of each file's agents. Switched on there for a file, it checks what an agent changed once the agent says it is done: colours and text styles, names, contrast. Its notes come to you in the window: tick the ones to fix and send them to the agent. Off: no Reviewer row and no checks in any file |
 | Save versions as agents work | on | Off: no version before an agent's first change in a file, and none hourly. An agent's `--checkpoint "label"` still saves one |
 
 Under them is the **Figma token**, which is optional, and under it the version:
