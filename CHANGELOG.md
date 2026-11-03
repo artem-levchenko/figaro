@@ -18,6 +18,8 @@ file; the release notes say when it has to be imported again.
   update on, the window's Update first points a clone of the old address at the new one (forks and other
   remotes stay as they are): the update to this release is still made by the bridge before it. To move a
   clone now, run this in Figaro's folder: `git remote set-url origin https://github.com/artem-levchenko/figaro.git`.
+- **Figma help, in the window's Figma token block, opens Figma's article on tokens.** Since 1.7.0 the window
+  let only the project's GitHub pages open, so the link played its click and opened nothing.
 
 ## [1.9.1] — 2026-10-30
 

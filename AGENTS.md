@@ -45,7 +45,7 @@ venv/bin/python -m pytest -q             # bridge, board, update, CLI, queue, fu
 /tmp/figaro-py39/bin/python -m pytest -q # the same on macOS's own python3 (3.9), the oldest we support
 node tests/helpers.test.js               # pure helpers of plugin/code.js on a stub of Figma
 node tests/plugin.test.js                # the plugin writes nothing to the file; the document id is the fileKey;
-                                         # the window opens only the project's pages, the old address as the new
+                                         # links open only the project's pages and Figma's help, the old address as the new
 node tests/audit.test.js                 # h.audit: every rule flagged and quiet, the cap, the bounded walk, h.ck()
 node tests/exec.test.js                  # the exec core: change reports, Cmd+Z, read-only, undo, error lines
 node tests/commands.test.js              # links, quick reads, --lib, inspect, shot, fonts, auto-layout, find

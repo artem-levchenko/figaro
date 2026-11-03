@@ -64,20 +64,24 @@ const throwing = load(new Error("fileKey is not available"));
 check("throwing fileKey falls back to a run id", /^r[0-9a-z]+$/.test(throwing.identity.docSig), true);
 check("nothing written when fileKey throws", throwing.writes, []);
 
-// The window opens only the project's pages on GitHub. A bridge from before the
-// repository moved sends its old address, which GitHub only redirects: the new one opens.
+// The window opens only the project's pages on GitHub and Figma's help. A bridge from before
+// the repository moved sends its old address, which GitHub only redirects: the new one opens.
+const HELP = "https://help.figma.com/hc/en-us/articles/8085703771159-Manage-personal-access-tokens";
 const linked = load("AbCdEf0123456789xyzKey");
 for (const url of [
   "https://github.com/artem-levchenko/figaro/releases/tag/v1.9.2",
   "https://github.com/artem-levchenko-2/figaro/releases/tag/v1.9.1",
+  HELP,
   "https://github.com/artem-levchenko-2/figaro-fork/releases",
   "https://github.com/artem-levchenko/figaro.example.com/",
+  "https://help.figma.com.example.com/",
   "https://example.com/artem-levchenko/figaro/",
   42,
 ]) linked.figma.ui.onmessage({ type: "open-url", url });
-check("release links open the project's pages only, the old address as the new", linked.opened, [
+check("links open the project's pages and Figma's help only, the old address as the new", linked.opened, [
   "https://github.com/artem-levchenko/figaro/releases/tag/v1.9.2",
   "https://github.com/artem-levchenko/figaro/releases/tag/v1.9.1",
+  HELP,
 ]);
 
 console.log(failed ? `\n${failed} FAILED` : "\nall plugin checks passed");
