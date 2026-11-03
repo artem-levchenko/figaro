@@ -9,6 +9,8 @@ file; the release notes say when it has to be imported again.
 
 ## [Unreleased]
 
+## [1.9.2] — 2026-11-03
+
 ### Fixed
 
 - **Figaro lives at github.com/artem-levchenko/figaro.** The repository's old address,
