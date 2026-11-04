@@ -1,4 +1,5 @@
-"""`figaro comments`: the script that finds what each pin is on, and the text it prints.
+"""`figaro comments` and `figaro comment`: the scripts that find what each pin is on and
+the layer a new comment goes on, and the text they print.
 
 The bridge lists a file's open comments with the node each is pinned to and the
 point on it (bridge_comments). Only the plugin knows the layers, so one quick
@@ -14,6 +15,7 @@ from datetime import datetime
 import figma_links
 
 NEAREST = 3     # layers named when nothing lies under a pin on the canvas
+PIN_IN = 24     # px: a new comment's pin goes into its layer half this from the corner, at most
 KIDS = 12       # children of a frame named when nothing deeper lies under the pin
 SNIPPET = 80    # characters of a text layer's text
 
@@ -196,4 +198,54 @@ def render(resp, answers):
         out.append("")
         out.append("A comment is often pinned to a frame, not to the layer it talks about: look among "
                    "the frame's children (figaro tree <id>, figaro shot <id>).")
+    return out
+
+
+# ─── figaro comment ───────────────────────────────────────────────────────
+
+# The body of an async function in the plugin: the layer a new comment goes on. It only
+# reads. Figma takes a pin on any id, one the file doesn't have too, so this checks it first.
+_LAYER = """
+const want = %s;
+const pageOf = (n) => { let p = n; while (p && p.type !== 'PAGE') p = p.parent; return p; };
+let n = null;
+if (want === 'sel') n = figma.currentPage.selection[0] || null;
+else { try { n = await h.node(want); } catch (e) { n = null; } }
+if (!n) return { gone: true };
+if (n.type === 'PAGE' || n.type === 'DOCUMENT') return { isPage: true, id: n.id, name: n.name };
+const page = pageOf(n);
+return { id: n.id, name: n.name, type: n.type, w: n.width, h: n.height,
+         page: page ? { id: page.id, name: page.name } : null };
+"""
+
+
+def layer_code(node):
+    """The script that finds the layer `node` names ("12:34" or "sel")."""
+    return _LAYER % json.dumps(node)
+
+
+def pin_at(layer, at=None):
+    """Where in the layer the pin goes: `at`, else a little in from its top left corner."""
+    if at:
+        return {"x": at[0], "y": at[1]}
+    num = lambda v: v if isinstance(v, (int, float)) and not isinstance(v, bool) and v > 0 else 0  # noqa: E731
+    return {"x": round(min(num(layer.get("w")), PIN_IN) / 2), "y": round(min(num(layer.get("h")), PIN_IN) / 2)}
+
+
+def posted(resp, layer=None):
+    """The lines that say what `figaro comment` did."""
+    key, name = resp.get("fileKey"), resp.get("file") or "Untitled"
+    act, cid = resp.get("action"), resp.get("id")
+    if act == "post":
+        where = _layer(layer, key, name) if layer else "the layer"
+        if layer and layer.get("page"):
+            where += f' (page "{layer["page"]["name"]}")'
+        out = [f"posted comment #{cid} on {where}"]
+    elif act == "reply":
+        out = [f"replied in the thread of #{resp.get('parent')}: #{cid}"]
+    elif act == "react":
+        return [f"reacted {resp.get('emoji')} to #{cid}"]
+    else:
+        return [f"deleted comment #{cid}"]
+    out.append(_indent(resp.get("message") or "", "  | "))
     return out

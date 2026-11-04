@@ -60,11 +60,17 @@ class FakeFigma:
         self.monkeypatch = monkeypatch
         self.server = None
         self.gate = None      # an Event: the version history waits for it
+        self.got = []         # (method, path, JSON body) of every write
+        self.write_status = None  # a write's answer instead of a 200, with Figma's message
+        self.next_id = 2000
 
     async def __aenter__(self):
         app = web.Application()
         app.router.add_get("/v1/files/{key}/versions", self.versions)
         app.router.add_get("/v1/files/{key}/comments", self.listing)
+        app.router.add_post("/v1/files/{key}/comments", self.post)
+        app.router.add_post("/v1/files/{key}/comments/{cid}/reactions", self.react)
+        app.router.add_delete("/v1/files/{key}/comments/{cid}", self.delete)
         self.server = TestServer(app)
         await self.server.start_server()
         self.monkeypatch.setattr(bridge_comments, "API", str(self.server.make_url("")).rstrip("/"))
@@ -89,6 +95,30 @@ class FakeFigma:
 
     async def listing(self, request):
         return self.answer(request, {"comments": self.comments})
+
+    async def write(self, request, body):
+        got = request.headers.get("X-Figma-Token")
+        sent = await request.json() if request.body_exists else None
+        self.seen.append((request.path, got))
+        self.got.append((request.method, request.path, sent))
+        if got != self.token:
+            return web.json_response({"status": 401, "err": "Invalid token"}, status=401)
+        if self.write_status:
+            status, said = self.write_status
+            return web.json_response({"error": True, "status": status, "message": said}, status=status)
+        return web.json_response(body)
+
+    async def post(self, request):
+        self.next_id += 1
+        sent = await request.json()
+        return await self.write(request, {"id": str(self.next_id), "parent_id": sent.get("comment_id", ""),
+                                          "message": sent.get("message"), "client_meta": sent.get("client_meta")})
+
+    async def react(self, request):
+        return await self.write(request, {"error": False, "status": 200})
+
+    async def delete(self, request):
+        return await self.write(request, {"error": False, "status": 200})
 
 
 def window(p, **m):
@@ -771,3 +801,304 @@ def test_the_report_says_how_many_open_comments_were_left_out():
     text = comments_text.render(dict(LISTED, comments=LISTED["comments"][:1], cut=7), None)
     assert "7 more open, left out" in "\n".join(text)
     assert "more open" not in "\n".join(comments_text.render(dict(LISTED, comments=LISTED["comments"][:1]), None))
+
+
+# ─── POST /comment ────────────────────────────────────────────────────────
+
+def comment(c, **body):
+    return c.post("/comment", json=body)
+
+
+def posted_file():
+    return figaro_token.token_path(bridge.PORT).parent / "posted-comments.json"
+
+
+def test_a_new_comment_goes_on_the_layer_signed_and_is_kept_as_figaros(monkeypatch):
+    async def go():
+        async with FakeFigma(monkeypatch) as fig:
+            c = await make_client()
+            async with FakePlugin(c, name="Draft", key=KEY, caps=CAPS) as p:
+                await save(p)
+                r = await comment(c, target="Draft", agent="designer", message="  Fix the label  ",
+                                  node="4:21", at={"x": 12, "y": 10})
+                body = await r.json()
+                assert r.status == 200 and body["ok"], body
+                assert body == {"ok": True, "action": "post", "id": "2001", "parent": None,
+                                "message": "[AI agent] Fix the label", "signed": True,
+                                "file": "Draft", "fileKey": KEY, "connected": True}
+                assert fig.got == [("POST", f"/v1/files/{KEY}/comments",
+                                    {"message": "[AI agent] Fix the label",
+                                     "client_meta": {"node_id": "4:21", "node_offset": {"x": 12, "y": 10}}})]
+                assert fig.seen[-1][1] == TOKEN and TOKEN not in json.dumps(body)
+                assert json.loads(posted_file().read_text(encoding="utf-8")) == {KEY: ["2001"]}
+                # a text the agent signed itself isn't signed twice; with no point, the corner
+                body = await (await comment(c, target="Draft", message="[AI agent] Done", node="4:21")).json()
+                assert body["message"] == "[AI agent] Done" and body["signed"] is False
+                assert fig.got[-1][2]["client_meta"]["node_offset"] == {"x": 0, "y": 0}
+            await c.close()
+    run(go())
+
+
+def test_with_the_switch_off_a_comment_goes_as_written(monkeypatch):
+    async def go():
+        async with FakeFigma(monkeypatch) as fig:
+            c = await make_client()
+            async with FakePlugin(c, name="Draft", key=KEY, caps=CAPS) as p:
+                await save(p)
+                assert boards(p)[-1]["settings"]["sign"] is True  # on, until it is switched
+                await window(p, type="set", name="sign", on=False)
+                await settle()
+                assert boards(p)[-1]["settings"]["sign"] is False
+                body = await (await comment(c, target="Draft", message="Fix the label", node="4:21")).json()
+                assert body["message"] == "Fix the label" and body["signed"] is False
+                assert fig.got[-1][2]["message"] == "Fix the label"
+            await c.close()
+    run(go())
+
+
+def test_a_reply_goes_in_the_thread_and_a_reaction_on_the_comment(monkeypatch):
+    async def go():
+        async with FakeFigma(monkeypatch) as fig:
+            c = await make_client()
+            async with FakePlugin(c, name="Draft", key=KEY, caps=CAPS) as p:
+                await save(p)
+                body = await (await comment(c, target="Draft", message="Done", reply="10")).json()
+                assert body["ok"] and body["action"] == "reply" and body["parent"] == "10" and body["id"] == "2001"
+                assert body["message"] == "[AI agent] Done"
+                assert fig.got[-1] == ("POST", f"/v1/files/{KEY}/comments",
+                                       {"message": "[AI agent] Done", "comment_id": "10"})
+                assert json.loads(posted_file().read_text(encoding="utf-8")) == {KEY: ["2001"]}
+                body = await (await comment(c, target="Draft", react="10")).json()
+                assert body["ok"] and body["emoji"] == ":white_check_mark:"
+                assert fig.got[-1] == ("POST", f"/v1/files/{KEY}/comments/10/reactions", {"emoji": ":white_check_mark:"})
+                body = await (await comment(c, target="Draft", react="10", emoji=":eyes:")).json()
+                assert fig.got[-1][2] == {"emoji": ":eyes:"}
+            await c.close()
+    run(go())
+
+
+def test_figaro_deletes_only_the_comments_it_posted(monkeypatch):
+    async def go():
+        async with FakeFigma(monkeypatch) as fig:
+            c = await make_client()
+            async with FakePlugin(c, name="Draft", key=KEY, caps=CAPS) as p:
+                await save(p)
+                r = await comment(c, target="Draft", delete="10")  # the designer's own: Figma would let it
+                body = await r.json()
+                assert r.status == 403 and "only the comments it posted" in body["error"] and fig.got == []
+                mine = (await (await comment(c, target="Draft", message="Fix", node="4:21")).json())["id"]
+                r = await comment(c, target="Draft", delete=mine)
+                assert r.status == 200 and (await r.json())["action"] == "delete"
+                assert fig.got[-1] == ("DELETE", f"/v1/files/{KEY}/comments/{mine}", None)
+                assert json.loads(posted_file().read_text(encoding="utf-8")) == {}
+                r = await comment(c, target="Draft", delete=mine)  # once deleted, it is no longer Figaro's
+                assert r.status == 403
+            await c.close()
+    run(go())
+
+
+def test_a_token_that_can_only_read_is_told_what_it_needs(monkeypatch):
+    async def go():
+        async with FakeFigma(monkeypatch) as fig:
+            c = await make_client()
+            async with FakePlugin(c, name="Draft", key=KEY, caps=CAPS) as p:
+                await save(p)
+                fig.write_status = (403, "Invalid scope(s): file_comments:read. This endpoint requires the file_comments:write scope")
+                r = await comment(c, target="Draft", agent="designer", message="Fix", node="4:21")
+                body = await r.json()
+                assert r.status == 403 and "file_comments:write" in body["error"] and body["token_rejected"] is False
+                await settle()
+                assert figma_of(p)["rejected"] is False and island(p, "Draft")["ask"] is None
+                assert not posted_file().exists()
+            await c.close()
+    run(go())
+
+
+def test_figmas_own_words_come_back_on_a_bad_request(monkeypatch):
+    async def go():
+        async with FakeFigma(monkeypatch) as fig:
+            c = await make_client()
+            async with FakePlugin(c, name="Draft", key=KEY, caps=CAPS) as p:
+                await save(p)
+                fig.write_status = (400, "You can't post a reply to an existing reply.")
+                r = await comment(c, target="Draft", message="Done", reply="12")
+                body = await r.json()
+                assert r.status == 400
+                assert "You can't post a reply to an existing reply." in body["error"]
+                assert body["error"] == ("Figma refused it: You can't post a reply to an existing reply. Reply to the "
+                                         "comment that starts the thread, by the id `figaro comments` prints after #.")
+                fig.write_status = (404, "Not found")
+                r = await comment(c, target="Draft", react="99")
+                body = await r.json()
+                assert r.status == 404 and body["missing"] is True and "#99" in body["error"]
+            await c.close()
+    run(go())
+
+
+def test_a_refused_token_on_a_write_asks_for_one_that_posts(monkeypatch):
+    async def go():
+        async with FakeFigma(monkeypatch) as fig:
+            c = await make_client()
+            async with FakePlugin(c, name="Draft", key=KEY, caps=CAPS) as p:
+                r = await comment(c, target="Draft", agent="writer", message="Fix", node="4:21")
+                body = await r.json()
+                assert r.status == 403 and body["needs_token"] and "figaro comment`" in body["error"]
+                await settle()
+                assert island(p, "Draft")["ask"] == {"agent": "writer", "what": "write"}
+                await save(p)
+                fig.token = "figd_changed"  # Figma stops taking the saved one
+                r = await comment(c, target="Draft", agent="writer", message="Fix", node="4:21")
+                assert r.status == 403 and (await r.json())["token_rejected"] is True
+                await settle()
+                assert figma_of(p)["rejected"] is True
+                assert island(p, "Draft")["ask"] == {"agent": "writer", "what": "write"}
+            await c.close()
+    run(go())
+
+
+@pytest.mark.parametrize("body, says", [
+    ({"message": "Fix"}, "'node'"),
+    ({"message": "Fix", "node": "1-2"}, "'node'"),
+    ({"message": "Fix", "node": "4:21", "at": {"x": "1", "y": 2}}, "'at'"),
+    ({"message": "Fix", "node": "4:21", "at": {"x": float("inf"), "y": 2}}, "'at'"),
+    ({"node": "4:21"}, "'message'"),
+    ({"message": "  ", "reply": "10"}, "'message'"),
+    ({"message": "x" * 4001, "node": "4:21"}, "at most 4000"),
+    ({"message": "Done", "reply": "10/../../v1/me"}, "'reply'"),
+    ({"react": "10", "emoji": "✅"}, "'emoji'"),
+    ({"react": 10}, "'react'"),
+    ({"delete": "10?x=1"}, "'delete'"),
+    ({"react": "10", "delete": "10"}, "one of"),
+])
+def test_what_a_write_needs_is_checked_before_figma_is_asked(monkeypatch, body, says):
+    async def go():
+        async with FakeFigma(monkeypatch) as fig:
+            c = await make_client()
+            async with FakePlugin(c, name="Draft", key=KEY, caps=CAPS) as p:
+                await save(p)
+                r = await c.post("/comment", data=json.dumps(dict(body, target="Draft")),
+                                 headers={"Content-Type": "application/json"})
+                assert r.status == 400 and says in (await r.json())["error"]
+                assert fig.got == []
+            await c.close()
+    run(go())
+
+
+def test_the_bridge_names_the_write_route():
+    async def go():
+        c = await make_client()
+        root = await (await c.get("/")).json()
+        assert "POST /comment" in root["endpoints"]
+        r = await c.post("/comment", json={}, headers={"X-Figaro-Token": "wrong"})
+        assert r.status == 401
+        await c.close()
+    run(go())
+
+
+# ─── figaro comment ───────────────────────────────────────────────────────
+
+LAYER = {"id": "4:21", "name": "Get started", "type": "TEXT", "w": 80, "h": 20, "page": {"id": "1:2", "name": "Page 1"}}
+POSTED = {"ok": True, "action": "post", "id": "2001", "parent": None, "message": "[AI agent] Fix the label",
+          "signed": True, "file": "Sandbox 5$", "fileKey": "AbCdEfGhIjKlMnOpQrStUv", "connected": True}
+
+
+def test_comment_looks_the_layer_up_then_posts_it_with_a_link(monkeypatch, capsys):
+    from test_cli import FakeBridge
+    sent = []
+
+    def fake(method, path, payload=None, timeout=65):
+        sent.append((path, payload))
+        return 200, ({"ok": True, "value": LAYER} if path == "/exec" else POSTED)
+    monkeypatch.setattr(figaro, "_request", fake)
+    monkeypatch.setattr(figaro, "AGENT", None)  # main() sets it from -A: back to none after this test
+    monkeypatch.setattr(sys, "argv", ["figaro", "comment", "4-21", "Fix", "the", "label", "-A", "writer"])
+    with pytest.raises(SystemExit) as done:
+        figaro.main()
+    out = capsys.readouterr().out
+    assert done.value.code == 0
+    (p1, exec_body), (p2, body) = sent
+    assert p1 == "/exec" and exec_body["quick"] is True and '"4:21"' in exec_body["code"]
+    assert p2 == "/comment" and body == {"agent": "writer", "message": "Fix the label", "node": "4:21",
+                                         "at": {"x": 12, "y": 10}}
+    link = "https://www.figma.com/design/AbCdEfGhIjKlMnOpQrStUv/Sandbox-5-?node-id=4-21"
+    assert out.splitlines() == [f'posted comment #2001 on TEXT "Get started" 4:21  {link} (page "Page 1")',
+                                "  | [AI agent] Fix the label"]
+
+
+def test_comment_takes_a_layer_link_as_its_file_and_at_for_the_pin(monkeypatch, capsys):
+    url = "https://www.figma.com/design/AbCdEfGhIjKlMnOpQrStUv/Sandbox?node-id=4-21"
+    code, out, err, calls = run_cli(monkeypatch, capsys, {"ok": True, "value": LAYER}, POSTED,
+                                    argv=("comment", url, "Fix", "--at", "40,12.5"))
+    assert code == 0, err
+    assert calls[0]["target"] == url and calls[1]["target"] == url
+    assert calls[1]["node"] == "4:21" and calls[1]["at"] == {"x": 40, "y": 12.5}
+    code, out, err, calls = run_cli(monkeypatch, capsys, {"ok": True, "value": LAYER}, POSTED,
+                                    argv=("comment", url, "Fix", "-T", "K2aaaaaaaaaaaaaaaaaaaa"))
+    assert "but -T is K2aaaaaaaaaaaaaaaaaaaa" in str(code) and calls == []
+
+
+@pytest.mark.parametrize("argv, says", [
+    (("comment", "4:21"), "then the text"),
+    (("comment", "page", "Fix"), "not on the page"),
+    (("comment", "--reply", "10"), "the text is missing"),
+    (("comment", "--delete", "10", "now"), "takes nothing else"),
+    (("comment", "--react", "10", ":eyes:", ":fire:"), "one shortcode"),
+    (("comment", "--reply", "10", "Done", "--at", "1,2"), "--at is for a new comment"),
+    (("comment", "4:21", "Fix", "--at", "left"), "--at is X,Y"),
+])
+def test_comment_says_what_it_needs_before_it_asks_anything(monkeypatch, capsys, argv, says):
+    code, out, err, calls = run_cli(monkeypatch, capsys, POSTED, argv=argv)
+    assert code not in (0, None) and says in err + str(code) and calls == []
+
+
+def test_comment_on_a_layer_that_isnt_there_posts_nothing(monkeypatch, capsys):
+    code, out, err, calls = run_cli(monkeypatch, capsys, {"ok": True, "value": {"gone": True}}, POSTED,
+                                    argv=("comment", "9:9", "Fix"))
+    assert "no layer 9:9 in this file" in str(code) and len(calls) == 1
+    code, out, err, calls = run_cli(monkeypatch, capsys, {"ok": True, "value": {"gone": True}}, POSTED,
+                                    argv=("comment", "sel", "Fix"))
+    assert "nothing is selected" in str(code) and len(calls) == 1 and '"sel"' in calls[0]["code"]
+    code, out, err, calls = run_cli(monkeypatch, capsys, {"ok": True, "value": {"isPage": True, "id": "1:2"}}, POSTED,
+                                    argv=("comment", "1:2", "Fix"))
+    assert "not on the page" in str(code) and len(calls) == 1
+    code, out, err, calls = run_cli(monkeypatch, capsys, {"ok": False, "error": "no file is connected"}, POSTED,
+                                    argv=("comment", "4:21", "Fix"))
+    assert code == 1 and "no file is connected" in err and "open in Figma with Figaro" in err and len(calls) == 1
+
+
+def test_reply_react_and_delete_send_the_comment_id(monkeypatch, capsys):
+    monkeypatch.setattr(figaro, "AGENT", None)  # an earlier test's -A stays in the module
+    code, out, err, calls = run_cli(monkeypatch, capsys, dict(POSTED, action="reply", parent="10", message="[AI agent] Done"),
+                                    argv=("comment", "--reply", "#10", "Done"))
+    assert code == 0 and calls == [{"reply": "10", "message": "Done"}]
+    assert out.splitlines() == ["replied in the thread of #10: #2001", "  | [AI agent] Done"]
+    code, out, err, calls = run_cli(monkeypatch, capsys, dict(POSTED, action="react", id="10", emoji=":white_check_mark:"),
+                                    argv=("comment", "--react", "10"))
+    assert code == 0 and calls == [{"react": "10"}] and out.strip() == "reacted :white_check_mark: to #10"
+    code, out, err, calls = run_cli(monkeypatch, capsys, dict(POSTED, action="react", id="10", emoji=":eyes:"),
+                                    argv=("comment", "--react", "10", ":eyes:"))
+    assert calls == [{"react": "10", "emoji": ":eyes:"}]
+    code, out, err, calls = run_cli(monkeypatch, capsys, dict(POSTED, action="delete", id="2001"),
+                                    argv=("comment", "--delete", "2001", "-T", "Sandbox"))
+    assert code == 0 and calls == [{"delete": "2001", "target": "Sandbox"}] and out.strip() == "deleted comment #2001"
+
+
+def test_comment_fails_with_the_bridges_words_and_an_older_bridge_says_so(monkeypatch, capsys):
+    from test_cli import FakeBridge
+    refused = {"ok": False, "error": "Figma refused (403): the token may only read comments"}
+    code, out, err, _ = run_cli(monkeypatch, capsys, refused, argv=("comment", "--react", "10"))
+    assert code == 1 and "the token may only read comments" in err
+    monkeypatch.setattr(figaro, "_request", lambda *a, **k: (404, {"ok": False, "error": "404: Not Found"}))
+    monkeypatch.setattr(sys, "argv", ["figaro", "comment", "--react", "10"])
+    with pytest.raises(SystemExit) as done:
+        figaro.main()
+    assert done.value.code == 1 and "older than `figaro comment`" in capsys.readouterr().err
+    monkeypatch.setattr(figaro, "_request", lambda *a, **k: (404, {"ok": False, "missing": True, "error": "Figma has no comment #10 in this file"}))
+    with pytest.raises(SystemExit):
+        figaro.main()
+    assert "no comment #10" in capsys.readouterr().err
+
+
+def test_every_command_names_comment_in_the_help():
+    assert "comment" in figaro.DISPATCH
+    assert "figaro comment " in figaro.__doc__

@@ -17,7 +17,7 @@ pytestmark = pytest.mark.skipif(not shutil.which("node"), reason="node is not in
 RUNNER = r"""
 const code = process.argv[1];
 const mk = (id, name, type, x, y, w, h, extra) => Object.assign(
-  { id, name, type, absoluteBoundingBox: { x, y, width: w, height: h }, absoluteTransform: [[1, 0, x], [0, 1, y]], children: [] }, extra || {});
+  { id, name, type, width: w, height: h, absoluteBoundingBox: { x, y, width: w, height: h }, absoluteTransform: [[1, 0, x], [0, 1, y]], children: [] }, extra || {});
 const page = { id: "1:2", name: "Page 1", type: "PAGE", children: [] };
 const hero = mk("1:55", "Hero", "FRAME", 0, 0, 800, 600);
 const pricing = mk("4:12", "Pricing", "FRAME", 1000, 100, 400, 300);
@@ -34,6 +34,16 @@ const h = { node: async (id) => { if (!byId[id]) throw new Error("no node " + id
 const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
 new AsyncFunction("figma", "h", code)({}, h).then((r) => console.log(JSON.stringify(r)));
 """
+
+
+def run_code(code, selection=None):
+    runner = RUNNER.replace('new AsyncFunction("figma", "h", code)({}, h)',
+                            'new AsyncFunction("figma", "h", code)({ currentPage: { selection: SEL.map((i) => byId[i]) } }, h)')
+    runner = runner.replace("const byId =", "const SEL = JSON.parse(process.argv[2] || '[]');\nconst byId =")
+    out = subprocess.run(["node", "-e", runner, code, json.dumps(selection or [])],
+                         capture_output=True, text=True, timeout=30)
+    assert out.returncode == 0, out.stderr
+    return json.loads(out.stdout)
 
 
 def run_script(pins):
@@ -88,3 +98,33 @@ def test_the_script_only_reads():
     code = comments_text.pin_code([{"id": "1", "pin": {"node": "1:2", "x": 1, "y": 2}}])
     for word in ("create", ".remove(", "setPluginData", "appendChild", "insertChild", "figma.root.findAll"):
         assert word not in code
+
+
+# ─── the layer a new comment goes on ──────────────────────────────────────
+
+def test_the_layer_of_a_new_comment_with_its_size_and_page():
+    assert run_code(comments_text.layer_code("4:21")) == {
+        "id": "4:21", "name": "Get started", "type": "TEXT", "w": 80, "h": 20, "page": {"id": "1:2", "name": "Page 1"}}
+
+
+def test_sel_is_the_first_selected_layer_and_nothing_selected_is_gone():
+    assert run_code(comments_text.layer_code("sel"), ["4:20", "4:21"])["id"] == "4:20"
+    assert run_code(comments_text.layer_code("sel")) == {"gone": True}
+
+
+def test_a_layer_the_file_doesnt_have_and_a_page_are_said_so():
+    assert run_code(comments_text.layer_code("9:9")) == {"gone": True}
+    assert run_code(comments_text.layer_code("1:2")) == {"isPage": True, "id": "1:2", "name": "Page 1"}
+
+
+def test_the_layer_script_only_reads():
+    code = comments_text.layer_code("4:21")
+    for write in ("remove(", "appendChild", "selection =", ".name =", "setPluginData", "create"):
+        assert write not in code
+
+
+def test_the_pin_goes_a_little_in_from_the_corner_or_where_asked():
+    assert comments_text.pin_at({"w": 80, "h": 20}) == {"x": 12, "y": 10}
+    assert comments_text.pin_at({"w": 8, "h": 6}) == {"x": 4, "y": 3}
+    assert comments_text.pin_at({"w": None, "h": 0}) == {"x": 0, "y": 0}
+    assert comments_text.pin_at({"w": 80, "h": 20}, [40, 2.5]) == {"x": 40, "y": 2.5}

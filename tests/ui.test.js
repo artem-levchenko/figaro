@@ -958,6 +958,15 @@ const RELEASE = "https://github.com/artem-levchenko/figaro/releases/tag/v1.2.0";
     await env.clock.advance(50);
     check("…and a click opens them", env.heard(), ["square 1700", "sine 520"]);
     check("…no Reviewer row from a bridge that has no such setting", /<b>Reviewer<\/b>/.test(env.app()), false);
+    check("…nor a switch for signing comments", /Sign agents' comments/.test(env.app()), false);
+    env.board(files, { settings: Object.assign({ sign: true }, settings), notes, folder: "~/figaro", checked: 990 });
+    await env.clock.advance(400);
+    check("…and with one, the switch to sign agents' comments, on, with what it does",
+          [/<b>Sign agents' comments<\/b><span>Agents post comments in Figma under your account\. This starts each one with \[AI agent\]<\/span>/.test(env.app()),
+           /class="sw on" role="switch" aria-checked="true" aria-label="Sign agents' comments" data-act="set" data-name="sign"/.test(env.app())], [true, true]);
+    env.click("set", null, { name: "sign" });
+    check("…which tells the bridge", env.sent("set").slice(-1), [{ type: "set", name: "sign", on: false }]);
+    env.ws().sent.length = 0;
     env.board(files, { settings: Object.assign({ reviewer: true }, settings), notes, folder: "~/figaro", checked: 990 });
     await env.clock.advance(400);
     check("…and with one, the row, its hint and a switch that is on",
@@ -1088,11 +1097,11 @@ const RELEASE = "https://github.com/artem-levchenko/figaro/releases/tag/v1.2.0";
     env.click("gear");
     check("the token block sits between the switches and the version, Optional by its title, and is open",
           [/<b>Save versions as agents work<\/b>.*<b>Figma token<span class="opt">Optional<\/span><\/b>.*class="fld".*Figaro 1\.1\.0/.test(env.app()),
-           /Lets agents read comments in Figma and see who changed a layer and when/.test(env.app()),
+           /Lets agents read and answer comments in Figma and see who changed a layer and when/.test(env.app()),
            /Figaro keeps it on this computer only\./.test(env.app())],
           [true, true, true]);
     check("…its help says where to make the token, with a link to Figma's",
-          [/In Figma: account menu → <b>Settings<\/b> → <b>Security<\/b> → <b>Generate new token<\/b>\. Let it read comments and file versions\./.test(env.app()),
+          [/In Figma: account menu → <b>Settings<\/b> → <b>Security<\/b> → <b>Generate new token<\/b>\. Let it read and write comments, and read file versions\./.test(env.app()),
            /data-act="release" data-url="https:\/\/help\.figma\.com[^"]*"><span>Figma help<\/span>/.test(env.app())], [true, true]);
     check("empty: a figd_… field, Save disabled and no Add or Cancel",
           [field()[1], field()[2], /placeholder="figd_…"/.test(env.app()), save()[1], /Add|Cancel/.test(env.app().split("Figma token")[1].split("Figaro 1")[0])],
@@ -1135,7 +1144,7 @@ const RELEASE = "https://github.com/artem-levchenko/figaro/releases/tag/v1.2.0";
     env.board(files, { settings, figma: figma({ token: "figd_…a1c4" }) });
     await env.clock.advance(400);
     check("connected: the masked token, what agents can do, and Remove; no field, no help",
-          [/<span class="okc">Connected<\/span> · figd_…a1c4\. Agents can read comments and the version history of the files they work in/.test(env.app()),
+          [/<span class="okc">Connected<\/span> · figd_…a1c4\. Agents can read and answer comments, and read the version history of the files they work in/.test(env.app()),
            /<button type="button" class="go2" data-act="token-remove">Remove<\/button>/.test(env.app()), /class="inp/.test(env.app()), /In Figma: account menu/.test(env.app())],
           [true, true, false, false]);
     env.click("token-remove");
@@ -1194,6 +1203,9 @@ const RELEASE = "https://github.com/artem-levchenko/figaro/releases/tag/v1.2.0";
     env.board(asking(true), { settings, figma: { token: null, check: null, why: null } });
     await env.clock.advance(400);
     check("another file's ask is its own: it shows on that island", /data-fid="doc:KEY2".*writer wants to read comments/.test(env.html()), true);
+    env.board([asking(true)[0], file("KEY2", "Kit", { ask: { agent: "writer", what: "write" } })], { settings, figma: { token: null, check: null, why: null } });
+    await env.clock.advance(400);
+    check("an agent that wanted to post says so", [/writer wants to post comments/.test(env.html()), /writer wants to read comments/.test(env.html())], [true, false]);
     env.board(asking(true), { settings, figma: { token: "figd_…a1c4", check: null, why: null } });
     await env.clock.advance(400);
     check("once there is a token, no ask shows", /wants to read comments/.test(env.html()), false);

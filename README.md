@@ -50,8 +50,8 @@ auto-layout, styles and variables, and builds with them.
   your text styles and variables instead of hex codes, auto-layout instead of
   loose frames. The skill that comes with Figaro teaches the agent these rules.
 - 💬&nbsp; **It reads what your team left in the file.** Figma comments, each
-  with the layer it is pinned to, and Dev Mode annotations, which it can add
-  too.
+  with the layer it is pinned to, and Dev Mode annotations. It can answer the
+  comments and add annotations too.
 - 🛟&nbsp; **It is hard to break things.** Before the first change Figaro saves
   a version in the file's history, every script reports what it changed, and
   the last one can be undone.
@@ -319,6 +319,7 @@ Change
   figaro icomp <key>              an instance of a published library component
   figaro rm <layer>…              delete layers; one wrong id and nothing is deleted
   figaro undo                     take back the file's last script, when that is safe
+  figaro comment <layer> "Text"   a Figma comment on a layer; --reply, --react (✅), --delete one it posted (needs a Figma token)
 
 Keep it running
   figaro doctor                   check the bridge, the plugin and the file
@@ -482,7 +483,7 @@ and knocks twice when Figma stops answering in its own file.
 
 Everything works without settings.
 
-**In the plugin's window**, ⚙ on its last line shows five switches. They hold
+**In the plugin's window**, ⚙ on its last line shows six switches. They hold
 in every window and across restarts: the bridge keeps them in
 `~/.figaro/settings.json`.
 
@@ -493,21 +494,23 @@ in every window and across restarts: the bridge keeps them in
 | Show recent changes | on | Off: an island lists its agents only, without what they changed lately |
 | Reviewer | on | The Reviewer, the last row of each file's agents. Switched on there for a file, it checks what an agent changed once the agent says it is done: colours and text styles, names, contrast. Its notes come to you in the window: tick the ones to fix and send them to the agent. Off: no Reviewer row and no checks in any file |
 | Save versions as agents work | on | Off: no version before an agent's first change in a file, and none hourly. An agent's `--checkpoint "label"` still saves one |
+| Sign agents' comments | on | An agent posts Figma comments under your account, the token's. On: each one starts with `[AI agent]`, so your team can tell it from yours |
 
 Under them is the **Figma token**, which is optional, and under it the version:
 what is new in it, ↻ to look for a new release now, and where Figaro runs.
 
-**The Figma token** lets agents read the comments in your files: Figma's Plugin
-API can't show them, and only Figma's REST API can, to an app with your personal
-access token. In Figma: account menu → Settings → Security → Generate new token,
-with read access to comments and file versions. Paste it in the field and press
-Save: Figaro checks it by reading the open file's version history, and keeps it
-on your computer only, in a file of its own next to the bridge's API token that
-only you can read (`~/.figaro/figma-token`). It is not in `settings.json`, the
-window, the logs or anything an agent is told; the window shows its last four
-characters. Remove forgets it. Without a token, an agent that runs
-`figaro comments` makes the file's island ask you for one (Add a Figma token, or
-Not now, which stops the asking for that file until the bridge restarts).
+**The Figma token** lets agents read and answer the comments in your files:
+Figma's Plugin API can't see them, and only Figma's REST API can, to an app with
+your personal access token. In Figma: account menu → Settings → Security →
+Generate new token, that can read and write comments and read file versions.
+Paste it in the field and press Save: Figaro checks it by reading the open
+file's version history, and keeps it on your computer only, in a file of its own
+next to the bridge's API token that only you can read (`~/.figaro/figma-token`).
+It is not in `settings.json`, the window, the logs or anything an agent is told;
+the window shows its last four characters. Remove forgets it. Without a token,
+an agent that runs `figaro comments` or `figaro comment` makes the file's island
+ask you for one (Add a Figma token, or Not now, which stops the asking for that
+file until the bridge restarts).
 
 **Everything else** is environment variables: put them in
 your shell's profile, such as `export FIGARO_UPDATE_BUTTON=off` in `~/.zshrc`
@@ -600,11 +603,12 @@ scripts and the pictures it takes stay on your computer and in Figma.
   `FIGARO_NO_UPDATE_CHECK=1` turns it off. Figaro never updates itself: its
   code changes when you press **Update** or pull it yourself, and
   `FIGARO_UPDATE_BUTTON=off` takes that button away.
-- With a [Figma token](#settings), which only `figaro comments` needs, the
-  bridge also talks to Figma's REST API: when you save the token, to check it
-  on the open file's version history, and when an agent runs
-  `figaro comments`, to read that file's comments. Nothing else goes there,
-  and the token stays in `~/.figaro/figma-token`.
+- With a [Figma token](#settings), which only `figaro comments` and
+  `figaro comment` need, the bridge also talks to Figma's REST API: when you
+  save the token, to check it on the open file's version history, and when an
+  agent runs them, to read that file's comments or to post what the agent
+  writes there. Nothing else goes there, and the token stays in
+  `~/.figaro/figma-token`.
 
 ---
 

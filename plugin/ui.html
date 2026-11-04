@@ -894,7 +894,8 @@ function takeBoard(m) {
   if (m.version) version = m.version;
   const fileOf = (f) => ({
     id: f.doc, doc: f.doc, sig: f.sig, name: f.name || "Untitled", here: false,
-    ask: f.ask && typeof f.ask === "object" ? { agent: String(f.ask.agent || "An agent") } : null,  // wants comments, has no token
+    // wants comments, has no token: to read them, or to post ("write")
+    ask: f.ask && typeof f.ask === "object" ? { agent: String(f.ask.agent || "An agent"), what: f.ask.what === "write" ? "write" : "read" } : null,
     agents: (Array.isArray(f.agents) ? f.agents : []).map((a) => ({
       name: a.name, since: t(a.since), last: t(a.last), busy: !!a.busy,
       done: a.done ? { text: a.done.text || "", at: t(a.done.at) } : null,
@@ -1072,11 +1073,12 @@ const agoShort = (ts) => `<span data-ago="${ts}">${ago(ts)}</span>`;
 const av = (name) => `<span class="av" style="--av: ${color(name)}">${esc((Array.from(String(name))[0] || "?").toUpperCase())}</span>`;
 
 // What a closed island shows: the file, then what matters most in it. An agent that
-// wants comments with no token to read them says so there too.
+// wants comments with no token to read or post them says so there too.
+const wants = (ask) => esc(ask.agent) + (ask.what === "write" ? " wants to post comments" : " wants to read comments");
 function headline(f) {
   const h = headlineOf(f);
   return f.ask && board && board.figma && (!board.figma.token || board.figma.rejected) && !h.alarm && h.kind !== "connecting" && h.kind !== "nobridge"
-    ? Object.assign({}, h, { sub: esc(f.ask.agent) + " wants to read comments" }) : h;
+    ? Object.assign({}, h, { sub: wants(f.ask) }) : h;
 }
 function headlineOf(f) {
   if (f.here && conn === "connecting") return { kind: "connecting", ind: '<span class="spin idle"></span>', sub: "connecting…" };
@@ -1130,8 +1132,9 @@ function callout(f) {
   // An agent asked for comments, and the designer hasn't given Figaro a token: not now, or add one
   // (the main button goes last, on the right, as in Figma's own dialogs).
   if (f.ask && board && board.figma && (!board.figma.token || board.figma.rejected)) {
-    return `<div class="callout ask"><div class="h"><span class="ind">${badge("ask")}</span>${esc(f.ask.agent)} wants to read comments</div>`
-      + "<p>Figma shows comments only to an app with your token. Add one in the settings, and your agent can go on.</p>"
+    return `<div class="callout ask"><div class="h"><span class="ind">${badge("ask")}</span>${wants(f.ask)}</div>`
+      + (f.ask.what === "write" ? "<p>Figma takes comments only from an app with your token. Add one in the settings, and your agent can go on.</p>"
+        : "<p>Figma shows comments only to an app with your token. Add one in the settings, and your agent can go on.</p>")
       + '<div class="acts"><button type="button" class="go2" data-act="ask-hide">Not now</button>'
       + '<button type="button" class="go" data-act="ask-add">Add a Figma token</button></div></div>';
   }
@@ -1504,13 +1507,14 @@ const SETS = [
   ["recent", "Show recent changes", "What agents changed lately, under each file's agents. A layer there selects it in Figma"],
   ["reviewer", "Reviewer", "A reviewer among each file's agents: it checks what agents change when they're done and shows you its notes. Off in every file until you turn it on"],
   ["versions", "Save versions as agents work", "Before an agent first changes a file, then hourly. Everyone with access sees them in its version history"],
+  ["sign", "Sign agents' comments", "Agents post comments in Figma under your account. This starts each one with [AI agent]"],
 ];
 function settingsView() {
   const can = conn === "ok" && !!(board && board.settings);
   const value = (k) => (board && board.settings ? board.settings[k] !== false : k === "sounds" ? !(board && !board.sounds) : true);
   // A bridge before the Recent switch doesn't know it: no switch, the list stays.
-  // Likewise for the Reviewer: an older bridge has none, and no row.
-  const known = ([k]) => (k !== "recent" && k !== "reviewer") || !board || !!(board.settings && k in board.settings);
+  // Likewise for the Reviewer: an older bridge has none, and no row; and for signing comments.
+  const known = ([k]) => (k !== "recent" && k !== "reviewer" && k !== "sign") || !board || !!(board.settings && k in board.settings);
   const sets = SETS.filter(known).map(([k, title, sub]) => {
     const on = value(k);
     return `<div class="set"><span class="t"><b>${title}</b><span>${sub}</span></span>`
@@ -1523,8 +1527,8 @@ function settingsView() {
     + versionCard();
 }
 
-// The Figma token, always open: lets agents read comments in Figma (and, later,
-// see who changed a layer). The bridge keeps it on this computer; the window
+// The Figma token, always open: lets agents read and answer comments in Figma (and,
+// later, see who changed a layer). The bridge keeps it on this computer; the window
 // only ever knows its last four characters. A bridge before the token has no
 // `figma` on its board, and the block isn't there.
 const TOKEN_HELP = "https://help.figma.com/hc/en-us/articles/8085703771159-Manage-personal-access-tokens";
@@ -1544,13 +1548,13 @@ function tokenCard() {
   if (fg.token && !refused) {
     tokenDraft = "";
     return '<div class="slot"><div class="island"><div class="set"><span class="t">' + title
-      + `<span><span class="okc">Connected</span> · ${esc(fg.token)}. Agents can read comments and the version history of the files they work in</span></span>`
+      + `<span><span class="okc">Connected</span> · ${esc(fg.token)}. Agents can read and answer comments, and read the version history of the files they work in</span></span>`
       + `<button type="button" class="go2" data-act="token-remove"${conn === "ok" ? "" : " disabled"}>Remove</button></div></div></div>`;
   }
   const checking = fg.check === "checking", failed = fg.check === "error";
   const can = conn === "ok" && !checking;
   const how = '<p class="help">In Figma: account menu → <b>Settings</b> → <b>Security</b> → <b>Generate new token</b>. '
-    + `Let it read comments and file versions. <button type="button" class="lnk" data-act="release" data-url="${TOKEN_HELP}"><span>Figma help</span>${ICON.out}</button></p>`;
+    + `Let it read and write comments, and read file versions. <button type="button" class="lnk" data-act="release" data-url="${TOKEN_HELP}"><span>Figma help</span>${ICON.out}</button></p>`;
   const why = failed ? `<p class="help err">${TOKEN_WHY[fg.why] || TOKEN_WHY.rejected}</p>`
     : refused ? `<p class="help err">Figma no longer accepts the saved token, ${esc(fg.token)}. Paste a new one, or remove it.</p>` : "";
   const drop = refused ? `<button type="button" class="go2" data-act="token-remove"${conn === "ok" ? "" : " disabled"}>Remove</button>` : "";
@@ -1558,7 +1562,7 @@ function tokenCard() {
     ? '<button type="button" class="go" data-act="token-save" disabled><span class="spin"></span>Checking</button>'
     : `<button type="button" class="go" data-act="token-save"${can && tokenDraft.trim() ? "" : " disabled"}>Save</button>`;
   return '<div class="slot"><div class="island"><div class="set tok"><span class="t">' + title
-    + "<span>Lets agents read comments in Figma and see who changed a layer and when</span></span>" + drop + "</div>"
+    + "<span>Lets agents read and answer comments in Figma and see who changed a layer and when</span></span>" + drop + "</div>"
     + `<div class="fld"><input class="inp${failed || refused ? " err" : ""}${checking ? " dim" : ""}" type="password" data-field="figma-token" placeholder="figd_…" `
     + `autocomplete="off" spellcheck="false" aria-label="Figma token" value="${esc(tokenDraft)}"${can ? "" : " disabled"}>${save}</div>`
     + why + how + '<p class="help last">Figaro keeps it on this computer only.</p></div></div>';

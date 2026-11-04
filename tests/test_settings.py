@@ -31,11 +31,11 @@ def test_a_switch_in_one_window_switches_it_in_all_and_holds_across_restarts():
         c = await make_client()
         async with FakePlugin(c, name="A", key="KEY1", caps=CAPS) as a, \
                 FakePlugin(c, name="B", key="KEY2", caps=CAPS) as b:
-            assert boards(b)[-1]["settings"] == {"sounds": True, "others": True, "recent": True, "reviewer": True, "versions": True}
+            assert boards(b)[-1]["settings"] == {"sounds": True, "others": True, "recent": True, "reviewer": True, "versions": True, "sign": True}
             await switch(a, "others", False)
             await settle()
             for p in (a, b):
-                assert boards(p)[-1]["settings"] == {"sounds": True, "others": False, "recent": True, "reviewer": True, "versions": True}
+                assert boards(p)[-1]["settings"] == {"sounds": True, "others": False, "recent": True, "reviewer": True, "versions": True, "sign": True}
             assert json.loads(kept().read_text(encoding="utf-8")) == {"others": False}
             assert [f.name for f in kept().parent.glob("settings.json*")] == ["settings.json"]  # no .part left
             status = await (await c.get("/status")).json()
@@ -116,7 +116,7 @@ def test_a_switch_it_doesnt_know_changes_nothing():
             for name, on in (("tone", False), ("sounds", "off"), ("sounds", 0), (None, False)):
                 await switch(p, name, on)
             await settle()
-            assert boards(p)[-1]["settings"] == {"sounds": True, "others": True, "recent": True, "reviewer": True, "versions": True}
+            assert boards(p)[-1]["settings"] == {"sounds": True, "others": True, "recent": True, "reviewer": True, "versions": True, "sign": True}
             assert not kept().exists()
         await c.close()
     run(go())
@@ -126,10 +126,10 @@ def test_a_settings_file_it_cant_read_leaves_them_as_they_start(monkeypatch):
     monkeypatch.setenv("FIGARO_SOUNDS", "off")
     kept().write_text('{"others": "no", "versions": false, "tone": false', encoding="utf-8")
     bridge_settings.load()
-    assert bridge_settings.current() == {"sounds": False, "others": True, "recent": True, "reviewer": True, "versions": True}
+    assert bridge_settings.current() == {"sounds": False, "others": True, "recent": True, "reviewer": True, "versions": True, "sign": True}
     kept().write_text('{"others": "no", "versions": false, "tone": false}', encoding="utf-8")
     bridge_settings.load()
-    assert bridge_settings.current() == {"sounds": False, "others": True, "recent": True, "reviewer": True, "versions": False}
+    assert bridge_settings.current() == {"sounds": False, "others": True, "recent": True, "reviewer": True, "versions": False, "sign": True}
 
 
 def test_with_versions_off_agents_save_none_unless_they_name_one():

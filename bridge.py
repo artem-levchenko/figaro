@@ -1293,6 +1293,10 @@ async def root_handler(request: web.Request) -> web.Response:
                              "running stays"),
             "POST /comments": ("{target?, agent?} -> the file's open Figma comments, each with where "
                                "it is pinned; needs the designer's Figma token (403 `needs_token`)"),
+            "POST /comment": ("{target?, agent?, message, node, at?} | {…, message, reply: id} | "
+                              "{…, react: id, emoji?} | {…, delete: id} -> a new comment on a layer, a "
+                              "reply, a reaction, or deleting one Figaro posted; with the designer's "
+                              "Figma token"),
             "WS /plugin": "Figma plugin connects here (one per open file)",
         },
     })

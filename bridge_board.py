@@ -184,7 +184,7 @@ def payload():
                        for n, a in f["agents"].items()],
             "recent": f["recent"],
             "stuck": stuck(key),
-            "ask": {"agent": asking[key]} if key in asking else None,
+            "ask": asking.get(key),
         })
         part = bridge_review.board_part(key, info)  # none with the global switch off: no row
         if part is not None:

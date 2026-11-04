@@ -141,7 +141,7 @@ Then read `run.jsonl` (commands, errors, the final report) and clean up what it 
 - `bridge_settings.py` — the window's settings, the bridge's for every window and kept in `settings.json` next
   to the token: Sounds (until switched, `FIGARO_SOUNDS`), Show other files, Show recent changes (`recent`;
   off: the islands show no Recent list), Reviewer (`reviewer`; off: no Reviewer row, no check on `figaro done` in any file), Save versions as agents work (off: no automatic
-  checkpoint, a label still saves one). And what the settings show about the version: what is new (the newest
+  checkpoint, a label still saves one), Sign agents' comments (`sign`; off: `figaro comment` posts the text as it is). And what the settings show about the version: what is new (the newest
   release's notes from GitHub, else this version's from `CHANGELOG.md`, each item's first clause), the folder,
   when GitHub last answered (`bridge.CHECKED`; ↻ is `bridge.look_now`).
 - `bridge_exec.py` — the bridge's side of exec: the fields it sends (`readOnly`, `checkpoint`, `quick`,
@@ -161,8 +161,15 @@ Then read `run.jsonl` (commands, errors, the final report) and clean up what it 
   kept until the bridge restarts; a stored token Figma refuses with a 401, its answer to a bad token, sets the
   board's `figma.rejected`, which brings the ask back and shows the token block as refused; a 403 is a missing
   scope or a file the token's account can't open, and leaves the token as it is). A file key from the plugin's `hello` is checked like a
-  link's before it goes in a REST path. `comments_text.py` is the CLI's side: the quick script that finds each
-  pin's layer in the plugin, and the text it prints. A new route or field of the board needs the older
+  link's before it goes in a REST path. `POST /comment` writes there: a new comment on a layer (`client_meta`
+  with `node_id` and `node_offset`), a reply (`comment_id`; a reply to a reply is Figma's 400), a reaction (a
+  shortcode only), or deleting a comment Figaro posted (their ids are kept in `posted-comments.json` next to the
+  token; Figma would let the token delete any of the designer's). With the settings' `sign` on, a new comment and a
+  reply start with `SIGN`, `[AI agent]`. A comment id is checked (digits) before it goes in a REST path. Figma takes
+  a pin on any id, one the file doesn't have too, so the CLI looks the layer up in the plugin first; and it has no
+  way to resolve a comment. A token without `file_comments:write` gets a 403 on a write, which leaves it as it is.
+  `comments_text.py` is the CLI's side: the quick scripts that find each pin's layer and the layer a new comment
+  goes on, and the text they print. A new route or field of the board needs the older
   window/bridge cases of "Rules" kept.
 - `bridge_review.py` — the Reviewer, a built-in agent in each file's Agents (`board.files[].reviewer`, only
   with the settings' Reviewer on). Its switch is per file, kept by file key in `reviewer.json` next to the token,
@@ -239,7 +246,9 @@ Then read `run.jsonl` (commands, errors, the final report) and clean up what it 
   older window ignores the field. The Reviewer works alike: a window sees no row when `settings` has no
   `reviewer`. The Reviewer agent (`board.files[].reviewer`, the window's `reviewer` and `review-answer`) works
   alike: an older window ignores the key, so it shows no row and nobody turns the Reviewer on; a new window with
-  an older bridge gets no key and shows no row. `figaro done`'s `review` is optional.
+  an older bridge gets no key and shows no row. `figaro done`'s `review` is optional. Sign agents' comments likewise: a window
+  shows the switch only when `settings` has `sign`. An ask's `what: "write"` makes a window say "wants to post
+  comments"; an older window says "read" all the same.
 - **`plugin/ui.html` passes the exec fields to the sandbox by name.** A new field in
   `bridge_exec.exec_fields` must be added there too, or it never arrives; `tests/test_exec.py` catches it.
 - **The plugin never writes to the document.** The document id is `figma.fileKey`, which a development

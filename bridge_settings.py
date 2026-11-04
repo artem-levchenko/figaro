@@ -15,6 +15,8 @@ it follows the variable the bridge started with (FIGARO_SOUNDS=off).
               kept apart, in reviewer.json
     versions  a checkpoint before an agent first changes a file, then hourly
               (bridge_exec); an agent's --checkpoint "label" still saves one
+    sign      a comment an agent posts in Figma (bridge_comments) starts with
+              "[AI agent]": Figma takes it under the designer's account
 
 Under them the version: what is new in it (the newest release's notes from
 GitHub, else this version's from CHANGELOG.md, a line each), where Figaro runs,
@@ -34,7 +36,7 @@ import bridge
 import bridge_board
 import figaro_token
 
-NAMES = ("sounds", "others", "recent", "reviewer", "versions")
+NAMES = ("sounds", "others", "recent", "reviewer", "versions", "sign")
 SETTINGS: dict = {}   # what was switched in a window: name -> bool
 NOTES: dict = {}      # version -> what is new in it, a line each
 NOTES_MAX = 5

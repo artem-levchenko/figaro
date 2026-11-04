@@ -683,6 +683,95 @@ def cmd_comments(args):
     return 0
 
 
+def _pin_point(text):
+    """--at "X,Y": px from the layer's top left corner."""
+    try:
+        x, y = (float(v) for v in text.split(","))
+    except ValueError:
+        sys.exit(f"figaro: --at is X,Y in px from the layer's top left corner, such as 40,12: {text}")
+    return [int(v) if v.is_integer() else v for v in (x, y)]
+
+
+def _layer_of(value):
+    """The layer a new comment goes on: an id, a link (its file becomes the target) or `sel`."""
+    link = figma_links.parse(value)
+    if link:
+        if not link.node:
+            sys.exit(f"figaro: the link has no node-id — use a link to a layer (Copy link to selection): {value}")
+        t_link = figma_links.parse(CLI.TARGET) if CLI.TARGET else None
+        t_key = t_link.key if t_link else CLI.TARGET if CLI.TARGET and figma_links.FILE_KEY.match(CLI.TARGET) else None
+        if CLI.TARGET is None:
+            CLI.TARGET = link.url
+        elif t_key and t_key != link.key:
+            sys.exit(f"figaro: the layer is from file {link.key}, but -T is {t_key}")
+        return link.node
+    if value == "page":
+        sys.exit("figaro: a comment goes on a layer, not on the page: give the id or link of a layer, or sel")
+    return value if value == "sel" else figma_links.node_id(value) or value
+
+
+def cmd_comment(args):
+    """Write in the file's Figma comments with the designer's token: a new comment on a
+    layer, a reply in a thread, a reaction, or deleting a comment Figaro posted."""
+    import comments_text
+    words = list(args.words or [])
+    cid = next((v for v in (args.reply, args.react, args.delete) if v is not None), None)
+    payload = {"agent": CLI.AGENT} if CLI.AGENT else {}
+    layer = None
+    if cid is not None:
+        cid = cid.lstrip("#")
+        if args.at:
+            sys.exit("figaro: --at is for a new comment on a layer")
+        if args.reply is not None:
+            if not words:
+                sys.exit('figaro: comment --reply <id> "<text>": the text is missing')
+            payload.update(reply=cid, message=" ".join(words))
+        elif args.react is not None:
+            if len(words) > 1:
+                sys.exit("figaro: comment --react <id> [<emoji>]: one shortcode, such as :white_check_mark:")
+            payload["react"] = cid
+            if words:
+                payload["emoji"] = words[0]
+        else:
+            if words:
+                sys.exit("figaro: comment --delete <id> takes nothing else")
+            payload["delete"] = cid
+    else:
+        if len(words) < 2:
+            sys.exit('figaro: comment <layer> "<text>": the layer (an id, a link or sel), then the text')
+        node, text = _layer_of(words[0]), " ".join(words[1:])
+        at = _pin_point(args.at) if args.at else None
+        _, got = CLI._exec(comments_text.layer_code(node), args.timeout, quick=True)
+        if not got.get("ok"):
+            say(f"figaro: {got.get('error') or 'no answer'}")
+            say("   a new comment goes on a layer of a file open in Figma with Figaro: Figaro looks the "
+                "layer up there first")
+            return 1
+        layer = got.get("value") if isinstance(got.get("value"), dict) else {"gone": True}
+        if layer.get("gone"):
+            sys.exit("figaro: nothing is selected in Figma" if node == "sel"
+                     else f"figaro: no layer {node} in this file: check the id and -T")
+        if layer.get("isPage"):
+            sys.exit("figaro: a comment goes on a layer, not on the page: give the id or link of a layer")
+        payload.update(message=text, node=layer["id"], at=comments_text.pin_at(layer, at))
+    if CLI.TARGET:
+        payload["target"] = CLI.TARGET
+    status, resp = CLI._request("POST", "/comment", payload, timeout=45)
+    if status == 404 and not resp.get("missing"):  # an older bridge has no such route
+        resp = {"ok": False, "error": "the bridge runs code older than `figaro comment`",
+                "hint": "restart it when no other agent is using it:  " + start_hint(restart=True)}
+    if args.raw:
+        return CLI._emit(resp, raw=True)
+    if not resp.get("ok"):
+        say(f"figaro: {resp.get('error', 'comment failed')}")
+        if resp.get("hint"):
+            say(f"   hint: {resp['hint']}")
+        return 1
+    for line in comments_text.posted(resp, layer):
+        print(line)
+    return 0
+
+
 # ─── notes ───────────────────────────────────────────────────────────────
 
 NOTES_WAIT = 600   # s: --wait asks again for this long; the bridge stops the notes at 10 minutes too
@@ -870,6 +959,22 @@ def add_parsers(sub, common):
     common(p)
     p.add_argument("file", nargs="?", default=None,
                    help="a Figma link or file key; default: the connected file, or -T")
+
+    p = sub.add_parser("comment", help="write in the file's Figma comments: a new one on a layer, a reply "
+                                       "(--reply), a reaction (--react), or delete one Figaro posted "
+                                       "(--delete); needs the designer's Figma token")
+    common(p)
+    p.add_argument("words", nargs="*", metavar="<layer> <text>",
+                   help="the layer (an id, a layer link or sel) and the text; with --reply only the "
+                        "text; with --react an emoji shortcode, :white_check_mark: if none")
+    act = p.add_mutually_exclusive_group()
+    act.add_argument("--reply", metavar="ID", help="reply in the thread of this comment, by the id "
+                                                   "`figaro comments` prints after #")
+    act.add_argument("--react", metavar="ID", help="react to this comment: an emoji shortcode, "
+                                                   ":white_check_mark: if none")
+    act.add_argument("--delete", metavar="ID", help="delete a comment Figaro posted")
+    p.add_argument("--at", metavar="X,Y", help="where the pin goes in the layer, px from its top left "
+                                               "corner (default: a little in from it)")
 
     p = sub.add_parser("notes", help="the designer's answer to the reviewer's notes on what you changed "
                                      "(after figaro done says the reviewer is on); read once")
