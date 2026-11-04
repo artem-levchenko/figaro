@@ -9,6 +9,8 @@ file; the release notes say when it has to be imported again.
 
 ## [Unreleased]
 
+## [1.10.0] — 2026-11-04
+
 ### Added
 
 - **`figaro comment` lets an agent answer in Figma comments**, with the designer's token: a new comment on a

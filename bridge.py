@@ -135,7 +135,7 @@ def bridge_outdated() -> bool:
 # Releasing (see AGENTS.md → Releasing): bump VERSION here, move CHANGELOG's
 # "Unreleased" under the new version, tag vX.Y.Z and push the tag.
 
-VERSION = "1.9.3"
+VERSION = "1.10.0"
 REPO = "artem-levchenko/figaro"
 # The repository's address until its owner's account was renamed (November
 # 2026). GitHub redirects it only while no repository takes that name again, so
