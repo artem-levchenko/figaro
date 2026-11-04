@@ -741,7 +741,7 @@ def cmd_comment(args):
             sys.exit('figaro: comment <layer> "<text>": the layer (an id, a link or sel), then the text')
         node, text = _layer_of(words[0]), " ".join(words[1:])
         at = _pin_point(args.at) if args.at else None
-        _, got = CLI._exec(comments_text.layer_code(node), args.timeout, quick=True)
+        _, got = CLI._exec(comments_text.layer_code(node, at), args.timeout, quick=True)
         if not got.get("ok"):
             say(f"figaro: {got.get('error') or 'no answer'}")
             say("   a new comment goes on a layer of a file open in Figma with Figaro: Figaro looks the "
@@ -753,7 +753,9 @@ def cmd_comment(args):
                      else f"figaro: no layer {node} in this file: check the id and -T")
         if layer.get("isPage"):
             sys.exit("figaro: a comment goes on a layer, not on the page: give the id or link of a layer")
-        payload.update(message=text, node=layer["id"], at=comments_text.pin_at(layer, at))
+        pin = layer.get("pin") or {}
+        payload.update(message=text, node=pin.get("node") or layer["id"],
+                       at={"x": pin.get("x", 0), "y": pin.get("y", 0)})
     if CLI.TARGET:
         payload["target"] = CLI.TARGET
     status, resp = CLI._request("POST", "/comment", payload, timeout=45)

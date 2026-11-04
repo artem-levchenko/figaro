@@ -166,8 +166,11 @@ Then read `run.jsonl` (commands, errors, the final report) and clean up what it 
   shortcode only), or deleting a comment Figaro posted (their ids are kept in `posted-comments.json` next to the
   token; Figma would let the token delete any of the designer's). With the settings' `sign` on, a new comment and a
   reply start with `SIGN`, `[AI agent]`. A comment id is checked (digits) before it goes in a REST path. Figma takes
-  a pin on any id, one the file doesn't have too, so the CLI looks the layer up in the plugin first; and it has no
-  way to resolve a comment. A token without `file_comments:write` gets a 403 on a write, which leaves it as it is.
+  a pin on any id, one the file doesn't have too, so the CLI looks the layer up in the plugin first and pins the
+  comment to its top-level layer (right on the page or in a section) at the layer's point: a pin on a layer inside
+  an instance (`I…;…`) is Figma's 400 "Comment couldn't be saved", which the bridge spares the agent. Figma has no
+  way to resolve a comment. A token without `file_comments:write` gets a 403 on a write (`needs_write`), which
+  leaves it as it is.
   `comments_text.py` is the CLI's side: the quick scripts that find each pin's layer and the layer a new comment
   goes on, and the text they print. A new route or field of the board needs the older
   window/bridge cases of "Rules" kept.

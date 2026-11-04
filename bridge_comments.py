@@ -538,6 +538,9 @@ def _request_of(body):
         node, at = body.get("node"), body.get("at")
         if not isinstance(node, str) or figma_links.node_id(node) != node:
             return _fail("'node' is the id of the layer to pin the comment to, as \"12:34\"", 400)
+        if node.startswith("I"):
+            return _fail("Figma takes no pin on a layer inside an instance: pin it to the layer's top-level "
+                         "frame, at the layer's point (`figaro comment` does that)", 400)
         at = at if at is not None else {"x": 0, "y": 0}
         if not (isinstance(at, dict) and _number(at.get("x")) and _number(at.get("y"))):
             return _fail("'at' is where the pin goes in the layer: {x, y}, px from its top left corner", 400)
@@ -621,7 +624,8 @@ async def comment_handler(request: web.Request) -> web.Response:
         else:
             status, text = _write_failed(e, act, cid)
         # `missing`: a 404 of this route's own, not an older bridge that has no such route
-        return _fail(text, status, token_rejected=e.status == 401, **({"missing": True} if status == 404 else {}))
+        extra = {"missing": True} if status == 404 else {"needs_write": True} if text == WRITE_REFUSED else {}
+        return _fail(text, status, token_rejected=e.status == 401, **extra)
     _accepted()
     return web.json_response(out)
 

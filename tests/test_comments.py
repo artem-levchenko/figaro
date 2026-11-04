@@ -907,6 +907,7 @@ def test_a_token_that_can_only_read_is_told_what_it_needs(monkeypatch):
                 r = await comment(c, target="Draft", agent="designer", message="Fix", node="4:21")
                 body = await r.json()
                 assert r.status == 403 and "file_comments:write" in body["error"] and body["token_rejected"] is False
+                assert body["needs_write"] is True
                 await settle()
                 assert figma_of(p)["rejected"] is False and island(p, "Draft")["ask"] is None
                 assert not posted_file().exists()
@@ -964,6 +965,7 @@ def test_a_refused_token_on_a_write_asks_for_one_that_posts(monkeypatch):
     ({"node": "4:21"}, "'message'"),
     ({"message": "  ", "reply": "10"}, "'message'"),
     ({"message": "x" * 4001, "node": "4:21"}, "at most 4000"),
+    ({"message": "Fix", "node": "I859:9450;859:9446"}, "inside an instance"),
     ({"message": "Done", "reply": "10/../../v1/me"}, "'reply'"),
     ({"react": "10", "emoji": "✅"}, "'emoji'"),
     ({"react": 10}, "'react'"),
@@ -997,7 +999,8 @@ def test_the_bridge_names_the_write_route():
 
 # ─── figaro comment ───────────────────────────────────────────────────────
 
-LAYER = {"id": "4:21", "name": "Get started", "type": "TEXT", "w": 80, "h": 20, "page": {"id": "1:2", "name": "Page 1"}}
+LAYER = {"id": "4:21", "name": "Get started", "type": "TEXT", "page": {"id": "1:2", "name": "Page 1"},
+         "top": {"id": "4:12", "name": "Pricing", "type": "FRAME"}, "pin": {"node": "4:12", "x": 42, "y": 40}}
 POSTED = {"ok": True, "action": "post", "id": "2001", "parent": None, "message": "[AI agent] Fix the label",
           "signed": True, "file": "Sandbox 5$", "fileKey": "AbCdEfGhIjKlMnOpQrStUv", "connected": True}
 
@@ -1017,12 +1020,17 @@ def test_comment_looks_the_layer_up_then_posts_it_with_a_link(monkeypatch, capsy
     out = capsys.readouterr().out
     assert done.value.code == 0
     (p1, exec_body), (p2, body) = sent
-    assert p1 == "/exec" and exec_body["quick"] is True and '"4:21"' in exec_body["code"]
-    assert p2 == "/comment" and body == {"agent": "writer", "message": "Fix the label", "node": "4:21",
-                                         "at": {"x": 12, "y": 10}}
-    link = "https://www.figma.com/design/AbCdEfGhIjKlMnOpQrStUv/Sandbox-5-?node-id=4-21"
-    assert out.splitlines() == [f'posted comment #2001 on TEXT "Get started" 4:21  {link} (page "Page 1")',
+    assert p1 == "/exec" and exec_body["quick"] is True and 'const want = "4:21", at = null' in exec_body["code"]
+    # the pin goes on the layer's top-level frame, at the layer's point
+    assert p2 == "/comment" and body == {"agent": "writer", "message": "Fix the label", "node": "4:12",
+                                         "at": {"x": 42, "y": 40}}
+    link = "https://www.figma.com/design/AbCdEfGhIjKlMnOpQrStUv/Sandbox-5-?node-id="
+    assert out.splitlines() == [f'posted comment #2001 on TEXT "Get started" 4:21  {link}4-21 (page "Page 1")',
+                                f'  the pin is on its top-level layer, FRAME "Pricing" 4:12  {link}4-12, at (42, 40): over the layer',
                                 "  | [AI agent] Fix the label"]
+    on_top = dict(LAYER, id="4:12", name="Pricing", type="FRAME", top=None, pin={"node": "4:12", "x": 12, "y": 12})
+    code, out, err, calls = run_cli(monkeypatch, capsys, {"ok": True, "value": on_top}, POSTED, argv=("comment", "4:12", "Fix"))
+    assert code == 0 and calls[1]["node"] == "4:12" and "top-level layer" not in out
 
 
 def test_comment_takes_a_layer_link_as_its_file_and_at_for_the_pin(monkeypatch, capsys):
@@ -1031,7 +1039,8 @@ def test_comment_takes_a_layer_link_as_its_file_and_at_for_the_pin(monkeypatch, 
                                     argv=("comment", url, "Fix", "--at", "40,12.5"))
     assert code == 0, err
     assert calls[0]["target"] == url and calls[1]["target"] == url
-    assert calls[1]["node"] == "4:21" and calls[1]["at"] == {"x": 40, "y": 12.5}
+    assert 'const want = "4:21", at = [40, 12.5]' in calls[0]["code"]  # the plugin puts the point in the top frame
+    assert calls[1]["node"] == "4:12" and calls[1]["at"] == {"x": 42, "y": 40}
     code, out, err, calls = run_cli(monkeypatch, capsys, {"ok": True, "value": LAYER}, POSTED,
                                     argv=("comment", url, "Fix", "-T", "K2aaaaaaaaaaaaaaaaaaaa"))
     assert "but -T is K2aaaaaaaaaaaaaaaaaaaa" in str(code) and calls == []

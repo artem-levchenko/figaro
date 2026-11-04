@@ -14,14 +14,15 @@ file; the release notes say when it has to be imported again.
 - **`figaro comment` lets an agent answer in Figma comments**, with the designer's token: a new comment on a
   layer, a reply in a comment's thread (`--reply <id>`), a reaction (`--react <id>`, ✅ unless it names another
   emoji), or deleting a comment Figaro posted (`--delete <id>`). Figaro looks the layer up in the file before it
-  posts, as Figma takes a pin on any id. It deletes only the comments it posted itself, though Figma would let
-  the token delete any of the designer's. Figma can't resolve a comment through its API, so the skill tells
-  agents to reply with what they did, react with ✅, and leave the resolving to the designer. A token that can
-  only read comments gets an answer that says the designer needs a new one that can write them.
+  posts, as Figma takes a pin on any id, and pins the comment to the layer's top-level frame at the layer's point:
+  Figma refuses a pin on a layer inside an instance. It deletes only the comments it posted itself, though Figma
+  would let the token delete any of the designer's. Figma can't resolve a comment through its API, so the skill
+  tells agents to reply with what they did, react with ✅, and leave the resolving to the designer. A token that
+  can only read comments gets an answer that says the designer needs a new one that can write them.
 - **Sign agents' comments, a switch in the window's settings**, on until you switch it off. Figma shows a comment
   an agent posts under your account, as it comes with your token; with the switch on, each one starts with
   `[AI agent]`, so your team can tell it from yours. It names no model: any agent may post it.
-- An agent that wants to post a comment and finds no token asks on the file's island: "designer wants to post
+- An agent that wants to post a comment and finds no token asks on the file's island: "<agent> wants to post
   comments". A window from before it says "wants to read comments", and shows no switch to sign comments.
 
 ### Changed

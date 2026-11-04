@@ -16,6 +16,7 @@ import figma_links
 
 NEAREST = 3     # layers named when nothing lies under a pin on the canvas
 PIN_IN = 24     # px: a new comment's pin goes into its layer half this from the corner, at most
+PIN_ON = ("PAGE", "SECTION")  # a new comment is pinned to the layer right under one of these
 KIDS = 12       # children of a frame named when nothing deeper lies under the pin
 SNIPPET = 80    # characters of a text layer's text
 
@@ -203,10 +204,13 @@ def render(resp, answers):
 
 # ─── figaro comment ───────────────────────────────────────────────────────
 
-# The body of an async function in the plugin: the layer a new comment goes on. It only
-# reads. Figma takes a pin on any id, one the file doesn't have too, so this checks it first.
+# The body of an async function in the plugin: the layer a new comment goes on, and where its
+# pin goes. It only reads. Figma takes a pin on any id, one the file doesn't have too, so this
+# checks it first. The pin goes on the layer's top-level layer (the one right on the page or in a
+# section), at the layer's point: Figma refuses a pin on a layer inside an instance ("Comment
+# couldn't be saved"), and its API names a frame for a pin.
 _LAYER = """
-const want = %s;
+const want = %s, at = %s, PIN = %d, ON = %s;
 const pageOf = (n) => { let p = n; while (p && p.type !== 'PAGE') p = p.parent; return p; };
 let n = null;
 if (want === 'sel') n = figma.currentPage.selection[0] || null;
@@ -214,22 +218,25 @@ else { try { n = await h.node(want); } catch (e) { n = null; } }
 if (!n) return { gone: true };
 if (n.type === 'PAGE' || n.type === 'DOCUMENT') return { isPage: true, id: n.id, name: n.name };
 const page = pageOf(n);
-return { id: n.id, name: n.name, type: n.type, w: n.width, h: n.height,
-         page: page ? { id: page.id, name: page.name } : null };
+let top = n;
+while (top.parent && !ON.includes(top.parent.type)) top = top.parent;
+const size = (v) => typeof v === 'number' && v > 0 ? v : 0;
+const lx = at ? at[0] : Math.round(Math.min(size(n.width), PIN) / 2);
+const ly = at ? at[1] : Math.round(Math.min(size(n.height), PIN) / 2);
+const t = n.absoluteTransform, T = top.absoluteTransform;
+const px = t[0][0] * lx + t[0][1] * ly + t[0][2], py = t[1][0] * lx + t[1][1] * ly + t[1][2];
+const det = T[0][0] * T[1][1] - T[0][1] * T[1][0] || 1, dx = px - T[0][2], dy = py - T[1][2];
+const r = (v) => Math.round(v * 100) / 100;
+return { id: n.id, name: n.name, type: n.type, page: page ? { id: page.id, name: page.name } : null,
+         top: top === n ? null : { id: top.id, name: top.name, type: top.type },
+         pin: { node: top.id, x: r((T[1][1] * dx - T[0][1] * dy) / det), y: r((T[0][0] * dy - T[1][0] * dx) / det) } };
 """
 
 
-def layer_code(node):
-    """The script that finds the layer `node` names ("12:34" or "sel")."""
-    return _LAYER % json.dumps(node)
-
-
-def pin_at(layer, at=None):
-    """Where in the layer the pin goes: `at`, else a little in from its top left corner."""
-    if at:
-        return {"x": at[0], "y": at[1]}
-    num = lambda v: v if isinstance(v, (int, float)) and not isinstance(v, bool) and v > 0 else 0  # noqa: E731
-    return {"x": round(min(num(layer.get("w")), PIN_IN) / 2), "y": round(min(num(layer.get("h")), PIN_IN) / 2)}
+def layer_code(node, at=None):
+    """The script that finds the layer `node` names ("12:34" or "sel") and where the pin of a
+    comment on it goes: `at` ([x, y] px from its top left corner), else a little in from it."""
+    return _LAYER % (json.dumps(node), json.dumps(at), PIN_IN, json.dumps(list(PIN_ON)))
 
 
 def posted(resp, layer=None):
@@ -241,6 +248,10 @@ def posted(resp, layer=None):
         if layer and layer.get("page"):
             where += f' (page "{layer["page"]["name"]}")'
         out = [f"posted comment #{cid} on {where}"]
+        top, pin = (layer or {}).get("top"), (layer or {}).get("pin") or {}
+        if top:
+            out.append(f"  the pin is on its top-level layer, {_layer(top, key, name)}, at ({_n(pin.get('x'))}, "
+                       f"{_n(pin.get('y'))}): over the layer")
     elif act == "reply":
         out = [f"replied in the thread of #{resp.get('parent')}: #{cid}"]
     elif act == "react":

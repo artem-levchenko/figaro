@@ -25,10 +25,16 @@ const card = mk("4:20", "Card", "FRAME", 1020, 120, 200, 100);
 const label = mk("4:21", "Get started", "TEXT", 1030, 130, 80, 20, { characters: "Get started" });
 const hidden = mk("4:22", "Hidden", "RECTANGLE", 1030, 130, 80, 20, { visible: false });
 const empty = mk("4:30", "Empty frame", "FRAME", 2000, 0, 100, 100);
-card.children.push(label, hidden); pricing.children.push(card); page.children.push(hero, pricing, empty);
-const all = [page, hero, pricing, card, label, hidden, empty];
+// a section far off, with a frame turned 90° in it and a text 10, 20 into that frame
+const flows = mk("7:1", "Flows", "SECTION", 9000, 0, 1000, 1000);
+const turned = mk("7:2", "Turned", "FRAME", 9400, 100, 300, 100, { absoluteTransform: [[0, -1, 9500], [1, 0, 100]] });
+const badge = mk("I7:3;1:9", "Badge", "TEXT", 9470, 110, 10, 40, { absoluteTransform: [[0, -1, 9480], [1, 0, 110]], width: 40, height: 10 });
+card.children.push(label, hidden); pricing.children.push(card); page.children.push(hero, pricing, empty, flows);
+flows.children.push(turned); turned.children.push(badge);
+const all = [page, hero, pricing, card, label, hidden, empty, flows, turned, badge];
 for (const n of all) if (n !== page) n.parent = n === card ? pricing : n === label || n === hidden ? card : page;
-for (const n of [hero, pricing, empty]) n.parent = page;
+for (const n of [hero, pricing, empty, flows]) n.parent = page;
+turned.parent = flows; badge.parent = turned;
 const byId = Object.fromEntries(all.map((n) => [n.id, n]));
 const h = { node: async (id) => { if (!byId[id]) throw new Error("no node " + id); return byId[id]; } };
 const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
@@ -102,9 +108,31 @@ def test_the_script_only_reads():
 
 # ─── the layer a new comment goes on ──────────────────────────────────────
 
-def test_the_layer_of_a_new_comment_with_its_size_and_page():
+PAGE = {"id": "1:2", "name": "Page 1"}
+
+
+def test_a_new_comment_is_pinned_to_its_layers_top_level_frame_at_the_layers_point():
+    # 4:21 is at 1030, 130 in Pricing at 1000, 100: the pin goes 12, 10 into the text (half of 24 at most)
     assert run_code(comments_text.layer_code("4:21")) == {
-        "id": "4:21", "name": "Get started", "type": "TEXT", "w": 80, "h": 20, "page": {"id": "1:2", "name": "Page 1"}}
+        "id": "4:21", "name": "Get started", "type": "TEXT", "page": PAGE,
+        "top": {"id": "4:12", "name": "Pricing", "type": "FRAME"}, "pin": {"node": "4:12", "x": 42, "y": 40}}
+    # --at is a point in the layer, from its corner
+    assert run_code(comments_text.layer_code("4:21", [40, 2.5]))["pin"] == {"node": "4:12", "x": 70, "y": 32.5}
+
+
+def test_a_top_level_layer_takes_the_pin_itself():
+    got = run_code(comments_text.layer_code("4:12"))
+    assert got["top"] is None and got["pin"] == {"node": "4:12", "x": 12, "y": 12}
+    assert run_code(comments_text.layer_code("4:30", [0, 0]))["pin"] == {"node": "4:30", "x": 0, "y": 0}
+
+
+def test_in_a_section_the_top_level_layer_is_the_sections_child_and_a_turned_frame_is_turned_back():
+    # Badge, inside an instance (its id starts with I), sits 10, 20 into Turned, which is turned 90°:
+    # 12, 5 into Badge is 22, 25 into Turned, whatever the canvas says
+    got = run_code(comments_text.layer_code("I7:3;1:9"))
+    assert got["top"] == {"id": "7:2", "name": "Turned", "type": "FRAME"}
+    assert got["pin"] == {"node": "7:2", "x": 22, "y": 25}
+    assert run_code(comments_text.layer_code("7:2"))["top"] is None
 
 
 def test_sel_is_the_first_selected_layer_and_nothing_selected_is_gone():
@@ -123,8 +151,3 @@ def test_the_layer_script_only_reads():
         assert write not in code
 
 
-def test_the_pin_goes_a_little_in_from_the_corner_or_where_asked():
-    assert comments_text.pin_at({"w": 80, "h": 20}) == {"x": 12, "y": 10}
-    assert comments_text.pin_at({"w": 8, "h": 6}) == {"x": 4, "y": 3}
-    assert comments_text.pin_at({"w": None, "h": 0}) == {"x": 0, "y": 0}
-    assert comments_text.pin_at({"w": 80, "h": 20}, [40, 2.5]) == {"x": 40, "y": 2.5}
