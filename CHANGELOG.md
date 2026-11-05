@@ -18,6 +18,11 @@ file; the release notes say when it has to be imported again.
   quiet: a photo cropped past both edges, a big backdrop shape, a fade or a glow, a mask, a frame that scrolls,
   and an avatar or a photo in a round frame (by its name). It comes right after `text-clipped`, the second
   loudest rule.
+- **A note of the Reviewer can be marked On purpose.** Until now a note you didn't send came back on the next
+  check. Now each note in the window has **On purpose**: the note leaves, and the Reviewer won't raise its rule
+  on those layers again in that file, after a restart too. The agent's `figaro notes` lists what you marked, so
+  it leaves those alone. The Reviewer's row says how many layers are marked, with a **Clear** that raises them
+  again. A window shows On purpose only with a bridge that has it.
 
 ### Changed
 

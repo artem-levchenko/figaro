@@ -1644,6 +1644,32 @@ const RELEASE = "https://github.com/artem-levchenko/figaro/releases/tag/v1.2.0";
           [/<img|<script|<b>x|<i>d/.test(bad), /&lt;img src=x onerror=alert\(1\)&gt;/.test(bad), /&quot;&gt;&lt;b&gt;/.test(bad), /&lt;script&gt;alert\(2\)/.test(bad)],
           [false, true, true, true]);
     check("…and a type like constructor gets the frame's icon, not Object's source", /native code|function Object/.test(bad), false);
+
+    // on purpose: a note the designer means; the bridge leaves its rule out on those layers from then on
+    again({ state: "notes", layers: 24, notes, at: 1050, intentional: 0 });
+    await env.clock.advance(400);
+    check("on purpose: a button under each note", (env.app().match(/<button type="button" class="op" data-act="rv-purpose" data-id="n\d"/g) || []).length, 3);
+    env.click("rv-tick", "here", { id: "n3" });
+    env.click("rv-purpose", "here", { id: "n2" });
+    check("…it marks the note, with the notes' at", env.sent("review-intentional"), [{ type: "review-intentional", doc: "doc:KEY1", note: "n2", at: 1050 }]);
+    again({ state: "notes", layers: 24, notes: [notes[0], notes[2]], at: 1050, intentional: 2 });
+    await env.clock.advance(400);
+    check("…the note leaves, the other ticks stay, and no Clear while notes wait",
+          [/Send 1 to designer/.test(env.app()), (env.app().match(/data-act="rv-purpose"/g) || []).length, /rv-unmark/.test(env.app())], [true, 2, false]);
+    again({ state: "sent", sent: 1, left: 1, intentional: 2 });
+    await env.clock.advance(400);
+    check("the row says how many layers are marked, with a Clear", /<p class="msg rvm">2 layers marked on purpose<button type="button" class="showall" data-act="rv-unmark"/.test(env.app()), true);
+    env.click("rv-unmark", "here");
+    check("…Clear forgets the file's marks", env.sent("review-unmark"), [{ type: "review-unmark", doc: "doc:KEY1" }]);
+    again({ state: "waiting", intentional: 0 });
+    await env.clock.advance(400);
+    check("…none marked: no line", /marked on purpose/.test(env.app()), false);
+    again({ state: "off", on: false, intentional: 4 });
+    await env.clock.advance(400);
+    check("…nor with the reviewer off in the file", /marked on purpose/.test(env.app()), false);
+    again({ state: "notes", layers: 24, notes, at: 1060 });
+    await env.clock.advance(400);
+    check("a bridge from before the mark: no On purpose", [/Send 3 to designer/.test(env.app()), /rv-purpose/.test(env.app())], [true, false]);
   }
   {
     // another file: its notes answer through the bridge, its layers are names only
