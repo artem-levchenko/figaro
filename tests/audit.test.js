@@ -275,6 +275,87 @@ const ids = (notes) => notes.map((n) => n.id);
           (await only("text-clipped", F([shortInWide], { width: 100, height: 30, clipsContent: true }))).length, 0);
   }
 
+  // ── content-clipped: a drawing, an image, an instance or a stroke cut by a frame that clips
+  {
+    const clip = (kids, props) => F(kids, Object.assign({ name: "Card", width: 100, height: 100, clipsContent: true, layoutMode: "NONE" }, props));
+    const image = [{ type: "IMAGE", visible: true, opacity: 1, scaleMode: "FILL" }];
+    const icon = VEC("#111111", { x: 90, y: 10, width: 20, height: 20 });
+    const inside = VEC("#111111", { x: 10, y: 10 });
+    const away = VEC("#111111", { x: 200, y: 10 });
+    const r = await only("content-clipped", clip([icon, inside, away]));
+    check("content-clipped: an icon half out of its card, not one inside or one wholly outside", ids(r), [icon.id]);
+    check("content-clipped: the note names the frame, the side and how much",
+          r[0].text, 'sticks out of the frame "Card", which clips its content, so 10 px of it is cut off on the right; move it inside, or turn the clipping off');
+    const top = VEC("#111111", { x: 10, y: -6 });
+    check("content-clipped: the side it is cut on", /6 px of it is cut off at the top/.test((await only("content-clipped", clip([top])))[0].text), true);
+    const within = VEC("#111111", { x: 84.4 }), past = VEC("#111111", { x: 84.6, y: 30 });
+    check("content-clipped: 0.5 px is an edge's anti-aliasing, 0.6 is a cut", ids(await only("content-clipped", clip([within, past]))), [past.id]);
+    check("content-clipped: quiet when the frame does not clip",
+          (await only("content-clipped", clip([VEC("#111111", { x: 90 })], { clipsContent: false }))).length, 0);
+    const scroller = clip([VEC("#111111", { x: 90 })], { overflowDirection: "HORIZONTAL" });
+    check("content-clipped: quiet in a frame that scrolls", (await only("content-clipped", scroller)).length, 0);
+    // what can be cut so that it shows: drawings, instances, images, strokes; not a plain fill
+    const inst = N("INSTANCE", { name: "Icon", x: 90, y: 0, width: 24, height: 24 });
+    inst.findAllWithCriteria = () => [];
+    const photo = RECT("#FFFFFF", { x: 70, y: 50, width: 40, height: 40, fills: image });
+    const plain = RECT("#EEEEEE", { x: 70, y: 0, width: 40, height: 20 });
+    check("content-clipped: an instance and an image are judged, a plain rectangle is not",
+          ids(await only("content-clipped", clip([inst, photo, plain]))), [inst.id, photo.id]);
+    // made to bleed: a photo cropped past both edges, a big backdrop, a fade, a glow, a mask
+    const cropped = RECT("#FFFFFF", { x: -20, y: 0, width: 140, height: 60, fills: image });
+    const blob = N("ELLIPSE", { x: 40, y: 40, width: 80, height: 80, fills: [solid("#2E6BFF")] });
+    const fade = N("ELLIPSE", { x: 90, y: 0, width: 30, height: 30, fills: [{ type: "GRADIENT_RADIAL", visible: true, opacity: 1 }] });
+    const glow = VEC("#2E6BFF", { x: 90, y: 50, effects: [{ type: "LAYER_BLUR", visible: true, radius: 20 }] });
+    const mask = RECT("#000000", { x: 0, y: 0, width: 50, height: 50, isMask: true });
+    const masked = VEC("#111111", { x: 90, y: 80 });
+    check("content-clipped: a crop, a backdrop, a fade, a glow, a mask and what it masks are quiet",
+          (await only("content-clipped", clip([cropped, blob, fade, glow, mask, masked]))).length, 0);
+    // a stroke: an outside one, and a centred one wider than the tolerance, on a layer flush with the frame
+    const stroked = (align, weight) => F([], { name: "Button", width: 100, height: 100, fills: [], strokes: [solid("#2E6BFF")], strokeWeight: weight, strokeAlign: align });
+    const outside = stroked("OUTSIDE", 1), centre = stroked("CENTER", 2), thin = stroked("CENTER", 1), inner = stroked("INSIDE", 4);
+    const s1 = await only("content-clipped", clip([outside]));
+    check("content-clipped: a button's outside stroke cut by its parent", ids(s1), [outside.id]);
+    check("content-clipped: the stroke's note", s1[0].text,
+          'its stroke is cut off by the frame "Card", which clips its content; set the stroke inside, or make room for it');
+    check("content-clipped: a centred 2 px stroke is cut, a centred 1 px or an inside one is not",
+          [ids(await only("content-clipped", clip([centre]))), (await only("content-clipped", clip([thin]))).length,
+           (await only("content-clipped", clip([inner]))).length], [[centre.id], 0, 0]);
+    // rounded corners: a square logo in a 20 x 20 frame with radius 10 comes out a circle
+    const ring = (kid, props) => clip([kid], Object.assign({ name: "Logo wrap", width: 20, height: 20, cornerRadius: 10 }, props));
+    const logo = RECT("#FFFFFF", { name: "Logo", width: 20, height: 20, fills: image });
+    const c1 = await only("content-clipped", ring(logo));
+    check("content-clipped: a square logo cut into a circle by its frame", ids(c1), [logo.id]);
+    check("content-clipped: the corners' note", c1[0].text,
+          'is cut by the rounded corners (radius 10) of the frame "Logo wrap", which clips its content; fine for an avatar or a photo, otherwise round the layer itself or turn the clipping off');
+    const logoInst = N("INSTANCE", { name: "Visa", width: 20, height: 20 });
+    logoInst.findAllWithCriteria = () => [];
+    check("content-clipped: an instance of a logo too", ids(await only("content-clipped", ring(logoInst))), [logoInst.id]);
+    const roundLogo = RECT("#FFFFFF", { width: 20, height: 20, fills: image, cornerRadius: 10 });
+    const inset = RECT("#FFFFFF", { x: 4, y: 4, width: 12, height: 12, fills: image });
+    const dot = N("ELLIPSE", { width: 20, height: 20, fills: [solid("#2E6BFF")] });
+    const flagIcon = VEC("#2E6BFF", { width: 20, height: 20 });
+    const quiet = [];
+    for (const kid of [roundLogo, inset, dot, flagIcon]) quiet.push((await only("content-clipped", ring(kid))).length);
+    check("content-clipped: quiet for a layer as round as its frame, one inset from the corners, a circle, a drawing", quiet, [0, 0, 0, 0]);
+    const avatar = RECT("#FFFFFF", { width: 40, height: 40, fills: image });
+    check("content-clipped: quiet for an avatar or a photo, by name",
+          [(await only("content-clipped", ring(avatar, { name: "Avatar", width: 40, height: 40, cornerRadius: 20 }))).length,
+           (await only("content-clipped", ring(RECT("#FFFFFF", { name: "User photo", width: 20, height: 20, fills: image })))).length], [0, 0]);
+    const cover = RECT("#FFFFFF", { width: 300, height: 200, fills: image });
+    check("content-clipped: quiet for a card's small radius on its cover image",
+          (await only("content-clipped", clip([cover], { width: 300, height: 200, cornerRadius: 12 }))).length, 0);
+    // a frame above the audited layer clips it too: the Reviewer audits a changed layer on its own
+    const lone = VEC("#111111", { x: 90, y: 10, width: 20, height: 20 });
+    clip([F([lone], { name: "Row", fills: [], width: 100, height: 100 })]);
+    check("content-clipped: a frame that clips above the root counts", ids(await only("content-clipped", lone)), [lone.id]);
+    const cutText = TX("wide", { width: 209, absoluteRenderBounds: { x: 0, y: 0, width: 100, height: 16 } });
+    clip([cutText], { width: 100, height: 30, name: "Frame that clips" });
+    check("text-clipped: …and for a text", ids(await only("text-clipped", cutText)), [cutText.id]);
+    // its place among the rules: after the text that is cut
+    const both = await audit(clip([cutText, icon], { width: 100, height: 30 }), { only: ["text-clipped", "content-clipped", "zero-size"] });
+    check("content-clipped: comes right after text-clipped", both.notes.map((n) => n.rule), ["text-clipped", "content-clipped"]);
+  }
+
   // ── small-target: WCAG 2.2 SC 2.5.8, 24 x 24; a button is told by its name, its component or a click
   {
     const box = (name, w, hh, props) => F([], Object.assign({ name, width: w, height: hh }, props));
@@ -501,7 +582,7 @@ const ids = (notes) => notes.map((n) => n.id);
     check("audit: only", some.notes.map((n) => n.rule), ["small-target", "default-name"]);
     let why = "";
     try { await audit(t, { only: ["nope"] }); } catch (e) { why = e.message; }
-    check("audit: an unknown rule fails and lists the rules", /^h\.audit: no rule "nope"; there are: missing-font, text-clipped,/.test(why), true);
+    check("audit: an unknown rule fails and lists the rules", /^h\.audit: no rule "nope"; there are: missing-font, text-clipped, content-clipped, zero-size,/.test(why), true);
     why = "";
     try { await h.audit({ type: "DOCUMENT" }); } catch (e) { why = e.message; }
     check("audit: the document is refused", /not the document/.test(why), true);

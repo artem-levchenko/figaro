@@ -50,6 +50,7 @@ LAYERS_MAX = 5           # layers named per note
 TITLES = {
     "missing-font": "Font is missing",
     "text-clipped": "Text is cut off",
+    "content-clipped": "Content is cut off",
     "zero-size": "Layer has no size",
     "low-contrast": "Text contrast is too low",
     "low-contrast-ui": "Icon or control contrast is too low",
@@ -285,6 +286,8 @@ SUMMARIES = {
                                  f"in stand-ins; switch them to installed fonts",
     "text-clipped": lambda n, t: f"{n} texts are cut off or run out of their boxes; make room for "
                                  f"the text or turn the clipping off",
+    "content-clipped": lambda n, t: f"{n} layers are cut off by frames that clip their content; "
+                                    f"move them inside, or turn the clipping off",
     "zero-size": lambda n, t: f"{n} layers have no size or no visible text, so nothing shows; "
                               f"give them a size or delete them",
     "low-contrast": lambda n, t: f"contrast is too low on {n} texts{_lowest(t)}; use stronger colours",
