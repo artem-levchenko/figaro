@@ -15,6 +15,12 @@ The file's switch is kept per file key in `reviewer.json` next to the token
 
 From the window: `reviewer` {doc, on}, `review-answer` {doc, send: [note ids]}
 and the Stop of the row (`stop` with agent "reviewer"; bridge_board.handle).
+
+A note the designer marks as on purpose (`review-intentional` {doc, note, at}) leaves the
+notes, and its rule is not raised again on its layers in that file: the marks are kept per
+file key in `reviewer-intentional.json` ({"<fileKey>": {"<rule>": [layer ids]}}), and
+`review-unmark` {doc} clears the file's. The board's `intentional` counts the file's marked
+layers; the agent's answer lists the notes marked in its round (`marked`).
 """
 
 from __future__ import annotations
@@ -45,11 +51,13 @@ ROOTS_MAX = 25           # top-most layers audited in one check
 TRACK_MAX = 500          # changed layers remembered per agent
 NOTES_MAX = 30           # notes kept from one check
 LAYERS_MAX = 5           # layers named per note
+MARKS_MAX = 2000         # layers marked on purpose kept per file; the oldest go first
 
 # One per h.audit rule, in its order of importance.
 TITLES = {
     "missing-font": "Font is missing",
     "text-clipped": "Text is cut off",
+    "content-clipped": "Content is cut off",
     "zero-size": "Layer has no size",
     "low-contrast": "Text contrast is too low",
     "low-contrast-ui": "Icon or control contrast is too low",
@@ -73,10 +81,11 @@ TRACK: dict = {}     # doc key -> {agent: {layer id: None}}: changed since its l
 ASKING: dict = {}    # doc key -> notes waiting for the designer: {agent, notes, at, expired, layers}
 ANSWERS: dict = {}   # doc key -> {agent: the designer's answer, until the agent reads it}
 LOCKS: dict = {}     # doc key -> a check at a time per file
+MARKED: dict = {}    # file key (else doc key) -> {rule: {layer id: None}}: on purpose, not raised again
 
 
 def reset():
-    for registry in (ON, STATE, TRACK, ASKING, ANSWERS, LOCKS):
+    for registry in (ON, STATE, TRACK, ASKING, ANSWERS, LOCKS, MARKED):
         registry.clear()
 
 
@@ -86,26 +95,49 @@ def _path():
     return figaro_token.token_path(bridge.PORT).parent / "reviewer.json"
 
 
+def _marks_path():
+    return _path().with_name("reviewer-intentional.json")
+
+
+def _read(path):
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
 def load():
     ON.clear()
-    try:
-        data = json.loads(_path().read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return
-    if isinstance(data, dict):
-        ON.update({k: v for k, v in data.items() if isinstance(k, str) and isinstance(v, bool)})
+    ON.update({k: v for k, v in _read(_path()).items() if isinstance(k, str) and isinstance(v, bool)})
+    MARKED.clear()
+    for key, rules in _read(_marks_path()).items():
+        if not (isinstance(key, str) and isinstance(rules, dict)):
+            continue
+        kept = {r: dict.fromkeys(i for i in ids if isinstance(i, str))
+                for r, ids in rules.items() if isinstance(r, str) and isinstance(ids, list)}
+        kept = {r: ids for r, ids in kept.items() if ids}
+        if kept:
+            MARKED[key] = kept
 
 
-def _save():
-    path = _path()
+def _write(path, data, what):
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         part = path.with_name(path.name + ".part")  # a write cut short leaves the old file whole
-        part.write_text(json.dumps({k: v for k, v in ON.items() if v}, indent=2) + "\n",
-                        encoding="utf-8")
+        part.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
         os.replace(part, path)
     except OSError as e:
-        print(f"[reviewer] can't keep the switches in {path} ({e}): until the bridge restarts")
+        print(f"[reviewer] can't keep {what} in {path} ({e}): until the bridge restarts")
+
+
+def _save():
+    _write(_path(), {k: v for k, v in ON.items() if v}, "the switches")
+
+
+def _save_marks():
+    _write(_marks_path(), {k: {r: list(ids) for r, ids in rules.items()} for k, rules in MARKED.items()},
+           "the notes marked on purpose")
 
 
 def _info(doc):
@@ -183,7 +215,8 @@ def board_part(doc, info):
         return None
     on = ON.get(_key(doc, info), False)
     out = {"on": on, "state": "off", "agent": None, "layers": 0, "since": None, "at": None,
-           "notes": [], "expired": False, "sent": 0, "left": 0}
+           "notes": [], "expired": False, "sent": 0, "left": 0,
+           "intentional": sum(len(ids) for ids in MARKED.get(_key(doc, info), {}).values())}
     if not on:
         return out
     row = STATE.get(doc)
@@ -243,9 +276,9 @@ for (const r of roots) {
   if (res.partial) partial = res.partial;
   errors += res.errors || 0;
   for (const n of res.notes) {
-    const some = (n.ids || [n.id]).slice(0, 5);
-    notes.push({ rule: n.rule, text: n.text, count: n.count || 1, ids: some });
-    for (const id of some) {
+    const all = n.ids || [n.id];
+    notes.push({ rule: n.rule, text: n.text, count: n.count || 1, ids: all });
+    for (const id of all.slice(0, 5)) {
       if (info[id]) continue;
       try { const x = await h.node(id); info[id] = { name: x.name, type: x.type }; } catch (e) { /* gone */ }
     }
@@ -285,6 +318,8 @@ SUMMARIES = {
                                  f"in stand-ins; switch them to installed fonts",
     "text-clipped": lambda n, t: f"{n} texts are cut off or run out of their boxes; make room for "
                                  f"the text or turn the clipping off",
+    "content-clipped": lambda n, t: f"{n} layers are cut off by frames that clip their content; "
+                                    f"move them inside, or turn the clipping off",
     "zero-size": lambda n, t: f"{n} layers have no size or no visible text, so nothing shows; "
                               f"give them a size or delete them",
     "low-contrast": lambda n, t: f"contrast is too low on {n} texts{_lowest(t)}; use stronger colours",
@@ -372,7 +407,7 @@ def _merge(found):
         for i in ids[:LAYERS_MAX]:
             meta = info.get(i) if isinstance(info.get(i), dict) else {}
             layers.append(dict(id=i, **_named(meta)))
-        note = {"id": f"n{len(notes) + 1}", "rule": rule, "title": TITLES[rule],
+        note = {"id": f"n{len(notes) + 1}", "rule": rule, "title": TITLES[rule], "_ids": ids,
                 "text": _summary(rule, list(texts), total)[:bridge_board.TEXT_MAX], "layers": layers,
                 "more": max(0, total - len(layers))}
         if len(texts) > 1:
@@ -384,6 +419,31 @@ def _merge(found):
             note["names"] = {i: _named(info[i]) for i in named if isinstance(info.get(i), dict)}
         notes.append(note)
     return notes
+
+
+def _unmarked(found, marked):
+    """The check's notes without the layers the designer marked on purpose for their rule. A note
+    left with none of its layers goes; its count drops by the layers taken out."""
+    if not marked:
+        return found
+    notes = []
+    for n in found.get("notes") or []:
+        if not isinstance(n, dict):
+            continue
+        ids = [i for i in n.get("ids") or [] if isinstance(i, str)]
+        mine = marked.get(n.get("rule")) or {}
+        left = [i for i in ids if i not in mine]
+        if len(left) == len(ids):
+            notes.append(n)
+        elif left:
+            count = int(n.get("count") or 1)
+            notes.append(dict(n, ids=left, count=max(len(left), count - (len(ids) - len(left)))))
+    return dict(found, notes=notes)
+
+
+def _public(notes):
+    """The notes as the board and the agent get them: without each one's full list of ids."""
+    return [{k: v for k, v in n.items() if k != "_ids"} for n in notes]
 
 
 async def _check(request, conn_id, doc, ids):
@@ -465,7 +525,7 @@ async def _on_done(request, conn_id, doc, agent, ids):
                     "text": f"The reviewer couldn't check your layers this time ({why}). "
                             f"Carry on; run figaro done again to have them checked."}
         layers = int(found.get("layers") or 0)
-        notes = _merge(found)
+        notes = _merge(_unmarked(found, MARKED.get(_key(doc))))
         if not layers:
             _set(doc, "waiting", agent=agent, layers=0)
             bridge_board.changed()
@@ -479,7 +539,8 @@ async def _on_done(request, conn_id, doc, agent, ids):
                     "text": f"Done. The reviewer checked the {_n(layers, 'layer')} you changed: "
                             f"all good."}
         at = time.time()
-        ASKING[doc] = {"agent": agent, "notes": notes, "at": at, "expired": False}
+        ASKING[doc] = {"agent": agent, "notes": _public(notes), "at": at, "expired": False,
+                       "ids": {n["id"]: n["_ids"] for n in notes}, "marked": []}
         _set(doc, "notes", agent=agent, layers=layers)
         STATE[doc]["at"] = at  # the window sends it back with its answer: which notes it answers
         _recent(doc, {"agent": AGENT, "summary": f"Checked {_n(layers, 'layer')}",
@@ -566,13 +627,15 @@ def answer(doc, send, at=None):
     sent = [n for n in notes if n["id"] in chosen]
     left = len(notes) - len(sent)
     agent = asking["agent"]
+    marked = asking.get("marked") or []
+    total = len(notes) + len(marked)
     if sent:
-        ANSWERS.setdefault(doc, {})[agent] = {"kind": "sent", "notes": sent, "total": len(notes),
-                                              "left": left}
+        ANSWERS.setdefault(doc, {})[agent] = {"kind": "sent", "notes": sent, "total": total,
+                                              "left": left, "marked": marked}
         _recent(doc, {"agent": "you", "summary": f"Sent {_n(len(sent), 'note')} to {agent}",
                       "note": f"{left} left as is" if left else None})
     else:
-        ANSWERS.setdefault(doc, {})[agent] = {"kind": "fine", "total": len(notes)}
+        ANSWERS.setdefault(doc, {})[agent] = {"kind": "fine", "total": total, "marked": marked}
         _recent(doc, {"agent": "you", "summary": f"All fine, nothing sent to {agent}"})
     row = _row(doc)
     row.update(state="sent", at=time.time(), since=None, sent=len(sent), left=left)
@@ -580,17 +643,68 @@ def answer(doc, send, at=None):
     return True
 
 
+def intentional(doc, note, at=None):
+    """The designer marks a note waiting for them as on purpose: its rule is not raised again on
+    its layers in this file, and the note leaves the ones the agent waits on. With none left, that
+    is the answer: all fine."""
+    asking = ASKING.get(doc)
+    if not asking or not isinstance(note, str):
+        return False
+    if at is not None and not (isinstance(at, (int, float)) and not isinstance(at, bool)
+                               and abs(at - asking["at"]) < 0.001):
+        return False
+    hit = next((n for n in asking["notes"] if n["id"] == note), None)
+    if hit is None:
+        return False
+    rules = MARKED.setdefault(_key(doc), {})
+    mine = rules.setdefault(hit["rule"], {})
+    for i in asking.get("ids", {}).get(note) or [l["id"] for l in hit["layers"]]:
+        mine.pop(i, None)  # the newest at the end
+        mine[i] = None
+    while sum(len(ids) for ids in rules.values()) > MARKS_MAX:
+        oldest = next(r for r in rules if rules[r])
+        rules[oldest].pop(next(iter(rules[oldest])))
+        if not rules[oldest]:
+            rules.pop(oldest)
+    _save_marks()
+    asking["notes"] = [n for n in asking["notes"] if n["id"] != note]
+    asking.setdefault("marked", []).append(
+        {"rule": hit["rule"], "title": hit["title"], "text": hit["text"], "layers": hit["layers"],
+         "more": hit.get("more", 0)})
+    _recent(doc, {"agent": "you", "summary": f"Marked on purpose: {hit['title']}"})
+    print(f"[reviewer] {hit['rule']} marked on purpose in {doc}")
+    if not asking["notes"]:
+        return answer(doc, [], asking["at"])
+    bridge_board.changed()
+    return True
+
+
+def unmark(doc):
+    """Clear the file's notes marked on purpose: the reviewer raises them again."""
+    if MARKED.pop(_key(doc), None) is None:
+        return False
+    _save_marks()
+    print(f"[reviewer] the notes marked on purpose in {doc} were cleared")
+    bridge_board.changed()
+    return True
+
+
 def window_message(m):
-    """`reviewer` and `review-answer` from a window. True if `m` was one."""
+    """`reviewer`, `review-answer`, `review-intentional` and `review-unmark` from a window.
+    True if `m` was one."""
     mtype = m.get("type")
     doc = m.get("doc") if isinstance(m.get("doc"), str) else None
-    if mtype not in ("reviewer", "review-answer"):
+    if mtype not in ("reviewer", "review-answer", "review-intentional", "review-unmark"):
         return False
     if doc:
         if mtype == "reviewer":
             switch(doc, m.get("on"))
-        else:
+        elif mtype == "review-answer":
             answer(doc, m.get("send"), m.get("at"))
+        elif mtype == "review-intentional":
+            intentional(doc, m.get("note"), m.get("at"))
+        else:
+            unmark(doc)
     return True
 
 
@@ -608,8 +722,12 @@ def _result(doc, agent, info):
                 ids = {i for d in n.get("details") or [] for i in d.get("layers") or []}
                 if ids:
                     n["links"] = {i: figma_links.node_url(info.get("fileKey"), info.get("name"), i) for i in ids}
-            return "sent", {"notes": notes, "total": got["total"], "left": got["left"]}
-        return got["kind"], {}
+            extra = {"notes": notes, "total": got["total"], "left": got["left"]}
+        else:
+            extra = {}
+        if got.get("marked"):
+            extra["marked"] = got["marked"]
+        return got["kind"], extra
     asking = ASKING.get(doc)
     if asking and asking["agent"] == agent:
         if asking["expired"] or time.time() - asking["at"] >= EXPIRE:

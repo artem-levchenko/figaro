@@ -492,7 +492,7 @@ in every window and across restarts: the bridge keeps them in
 | Sounds | on | The window's sounds for what you press, and its knock when Figma stops answering. The tone you can't hear, which keeps a background Figma quick, plays either way |
 | Show other files | on | Off: each window shows its own file's island, and other files only where Figma isn't answering |
 | Show recent changes | on | Off: an island lists its agents only, without what they changed lately |
-| Reviewer | on | The Reviewer, the last row of each file's agents. Switched on there for a file, it checks what an agent changed once the agent says it is done: colours and text styles, names, contrast. Its notes come to you in the window: tick the ones to fix and send them to the agent. Off: no Reviewer row and no checks in any file |
+| Reviewer | on | The Reviewer, the last row of each file's agents. Switched on there for a file, it checks what an agent changed once the agent says it is done: colours and text styles, names, contrast. Its notes come to you in the window: tick the ones to fix and send them to the agent, or mark one On purpose, and it isn't raised again on those layers in that file (Clear, under the Reviewer's row, raises them again). Off: no Reviewer row and no checks in any file |
 | Save versions as agents work | on | Off: no version before an agent's first change in a file, and none hourly. An agent's `--checkpoint "label"` still saves one |
 | Sign agents' comments | on | An agent posts Figma comments under your account, the token's. On: each one starts with `[AI agent]`, so your team can tell it from yours |
 

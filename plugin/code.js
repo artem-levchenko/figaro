@@ -9,7 +9,7 @@ figma.showUI(__html__, { width: UI_WIDTH, height: 70, title: "Figaro Relay", the
 // disk and asks for a re-Run when they differ, because a running plugin keeps
 // the code it started with. Bump it on every change to plugin/ —
 // tests/test_plugin_version.py fails until you do.
-const PLUGIN_VERSION = "2026-11-04.1";
+const PLUGIN_VERSION = "2026-11-05.2";
 
 // What this build can do beyond a plain exec, so the bridge knows which
 // requests it may send (an older build gets `figaro reload` first).
@@ -2780,7 +2780,7 @@ Object.assign(HELPERS, {
 // audit:begin
 // In order of importance: the first rule is the loudest.
 const AUDIT_RULES = [
-  "missing-font", "text-clipped", "zero-size", "low-contrast", "low-contrast-ui", "placeholder-text",
+  "missing-font", "text-clipped", "content-clipped", "zero-size", "low-contrast", "low-contrast-ui", "placeholder-text",
   "small-target", "no-auto-layout", "empty-frame", "detached-instance", "unbound-color",
   "no-text-style", "default-name", "uneven-siblings", "heading-order", "absolute-in-layout",
 ];
@@ -2805,6 +2805,10 @@ const AUDIT_HEADING_NAME = /^\s*(?:h|heading\s*)([1-6])\s*$/i;  // the whole nam
 const AUDIT_CONTROL = new Set(Array.from(AUDIT_BUTTON).concat(["nav", "menu", "action", "actions", "badge", "status", "indicator"]));  // where an icon is a UI graphic (WCAG 1.4.11)
 const AUDIT_TYPE_VARS = ["fontSize", "fontFamily", "fontStyle", "fontWeight", "lineHeight", "letterSpacing"];
 const AUDIT_HEADING_STYLE = /(?:^|[\s/_-])(?:h|heading\s?)([1-6])(?:$|[\s/_-])/i;
+const AUDIT_CUT = 0.5;      // px a frame may cut off a layer before it is a note: an edge's anti-aliasing, not a cut
+const AUDIT_SIDES = ["on the left", "at the top", "on the right", "at the bottom"];
+// Words that say a layer is cut to its frame's shape on purpose: a round avatar, a flag in a circle.
+const AUDIT_CROPPED = new Set(["avatar", "photo", "userpic", "picture", "portrait", "profile", "flag", "cover"]);
 
 // Is a property "Disabled" on: true or yes. Only disabled controls are exempt from contrast (WCAG 1.4.3);
 // a tab that is just not selected ("inactive") is not.
@@ -2911,6 +2915,55 @@ function auditFillState(n, mixed) {
     return { raw, tokened };
   }
   return auditPaintState(n.fills, n.fillStyleId, mixed);
+}
+
+// A layer's corner radii: top left, top right, bottom right, bottom left.
+function auditRadii(n) {
+  const one = n.cornerRadius;
+  if (typeof one === "number") return [one, one, one, one];
+  const four = [n.topLeftRadius, n.topRightRadius, n.bottomRightRadius, n.bottomLeftRadius];
+  return four.every((v) => typeof v === "number") ? four : [0, 0, 0, 0];
+}
+
+function auditStroked(n) {
+  return auditShown(n.strokes).length > 0 && n.strokeWeight !== 0;
+}
+
+// How far a layer's stroke reaches past its box: all of an outside stroke, half of a centred one.
+function auditOutset(n, mixed) {
+  if (!auditStroked(n)) return 0;
+  let w = n.strokeWeight;
+  if (w === mixed || typeof w !== "number") {
+    const sides = [n.strokeTopWeight, n.strokeRightWeight, n.strokeBottomWeight, n.strokeLeftWeight].filter((v) => typeof v === "number");
+    w = sides.length ? Math.max.apply(null, sides) : 0;
+  }
+  return n.strokeAlign === "OUTSIDE" ? w : n.strokeAlign === "CENTER" ? w / 2 : 0;
+}
+
+// What a frame that clips can cut so that it shows: drawings and instances, and a rectangle or a frame
+// with an image or a stroke. A plain fill is a background, made to be cut.
+function auditCuttable(n) {
+  const t = n.type;
+  if (t === "VECTOR" || t === "BOOLEAN_OPERATION" || t === "STAR" || t === "POLYGON" || t === "ELLIPSE" || t === "INSTANCE") return true;
+  if (t === "RECTANGLE" || t === "FRAME" || t === "COMPONENT") return auditShown(n.fills).some((p) => p.type === "IMAGE") || auditStroked(n);
+  return false;
+}
+
+// A glow or a fade, made to bleed: a layer blur, or gradients only and no stroke.
+function auditDecor(n) {
+  if (Array.isArray(n.effects) && n.effects.some((x) => x && x.visible !== false && x.type === "LAYER_BLUR")) return true;
+  const fills = auditShown(n.fills);
+  return fills.length > 0 && fills.every((p) => /^GRADIENT_/.test(p.type)) && !auditStroked(n);
+}
+
+// A frame that clips its content, as a link of the chain of such frames above a layer; `up` otherwise.
+// One that scrolls in the prototype hides what is past its edge on purpose.
+function auditClipOf(n, up) {
+  if ((n.type === "FRAME" || n.type === "COMPONENT" || n.type === "INSTANCE") && n.clipsContent === true && n.absoluteBoundingBox) {
+    return { box: n.absoluteBoundingBox, name: n.name, up, radius: auditRadii(n),
+             scroll: typeof n.overflowDirection === "string" && n.overflowDirection !== "NONE" };
+  }
+  return up;
 }
 
 // What a layer's own fill does for what is above it: undefined — nothing, so the
@@ -3165,6 +3218,57 @@ async function auditRun(root, opts, env) {
     if (level !== null && bb) headings.push({ n, level, y: bb.y, x: bb.x, screen: e.screen });
   };
 
+  // A layer after a mask among its siblings is cut by the mask, on purpose.
+  const masked = (e) => {
+    const p = e.n.parent;
+    if (!p) return false;
+    const sibs = kids(p), at = indexOf(e);
+    for (let j = at - 1; j >= 0 && j >= at - 40; j--) if (sibs[j].isMask) return true;
+    return false;
+  };
+  // Cut by a frame that clips: the layer sticks out of it, its stroke does, or the frame's rounded corners
+  // cut a layer that fills it. The nearest frame that cuts it is named.
+  const clipped = (e, n) => {
+    if (!e.clip || n.isMask || !auditCuttable(n) || auditDecor(n) || masked(e)) return;
+    const b = n.absoluteBoundingBox;
+    if (!b) return;
+    const out = auditOutset(n, mixed);
+    for (let c = e.clip, depth = 0; c && depth < 20; c = c.up, depth++) {
+      const o = c.box;
+      if (c.scroll || o.width < 1 || o.height < 1) continue;
+      if (b.x >= o.x + o.width || b.x + b.width <= o.x || b.y >= o.y + o.height || b.y + b.height <= o.y) return;  // all of it hidden: not a cut
+      const past = [o.x - b.x, o.y - b.y, b.x + b.width - (o.x + o.width), b.y + b.height - (o.y + o.height)];  // left, top, right, bottom
+      const worst = Math.max.apply(null, past);
+      const frame = 'the frame "' + auditShort(c.name, 30) + '", which clips its content';
+      if (worst > AUDIT_CUT) {
+        // Past both edges of a side: a photo cropped by its frame, a bleed. A big shape is a backdrop.
+        const crop = (past[0] > AUDIT_CUT && past[2] > AUDIT_CUT) || (past[1] > AUDIT_CUT && past[3] > AUDIT_CUT);
+        const backdrop = AUDIT_SHAPES.has(n.type) && b.width >= o.width / 2 && b.height >= o.height / 2;
+        if (!crop && !backdrop) {
+          add("content-clipped", n, "sticks out of " + frame + ", so " + auditNum(worst) + " px of it is cut off " +
+            AUDIT_SIDES[past.indexOf(worst)] + "; move it inside, or turn the clipping off");
+        }
+        return;
+      }
+      if (out > 0 && worst + out > AUDIT_CUT) {
+        add("content-clipped", n, "its stroke is cut off by " + frame + "; set the stroke inside, or make room for it");
+        return;
+      }
+      // A square in a round frame: the frame's corners cut a layer that fills it, unless the layer is as round.
+      const r = c.radius || [0, 0, 0, 0];
+      const big = Math.max.apply(null, r);
+      if (big >= 2 && big >= Math.min(o.width, o.height) / 4 && n.type !== "ELLIPSE" && !AUDIT_ICON.has(n.type) && past.every((v) => v >= -1)) {
+        const own = auditRadii(n);
+        const cropped = auditWords(c.name).concat(auditWords(n.name)).some((w) => AUDIT_CROPPED.has(w));
+        if (!cropped && r.some((v, i) => v >= 2 && own[i] < v - AUDIT_CUT)) {
+          add("content-clipped", n, "is cut by the rounded corners (radius " + auditNum(big) + ") of " + frame +
+            "; fine for an avatar or a photo, otherwise round the layer itself or turn the clipping off");
+          return;
+        }
+      }
+    }
+  };
+
   const small = async (n) => {
     if (!on("small-target") || (n.width >= minTarget && n.height >= minTarget)) return;
     let why = null;
@@ -3248,7 +3352,12 @@ async function auditRun(root, opts, env) {
   };
 
   try {
-    const stack = [{ n: root, at: -1, up: undefined, alpha: 1, clip: null, inLayout: false, screen: root.id }];
+    // The frames above the root that clip it count too: the Reviewer audits a changed layer on its own.
+    const above = [];
+    for (let p = auditSafe(() => root.parent, null); p && p.type !== "PAGE" && p.type !== "DOCUMENT" && above.length < 80; p = auditSafe(() => p.parent, null)) above.push(p);
+    let clip0 = null;
+    for (let i = above.length - 1; i >= 0; i--) clip0 = auditClipOf(above[i], clip0);
+    const stack = [{ n: root, at: -1, up: undefined, alpha: 1, clip: clip0, inLayout: false, screen: root.id }];
     // One layer: its own notes, then its children onto the stack.
     const visit = async (e) => {
       const n = e.n;
@@ -3272,6 +3381,8 @@ async function auditRun(root, opts, env) {
         add("absolute-in-layout", n, 'positioned by hand inside the auto-layout "' + auditShort(pe ? pe.n.name : "", 30) +
           '"; fine for a badge or an overlay, otherwise put it in the flow');
       }
+
+      if (!hollow && type !== "TEXT" && e.clip && on("content-clipped")) clipped(e, n);
 
       if (type === "TEXT") {
         textBasics(n);
@@ -3324,10 +3435,7 @@ async function auditRun(root, opts, env) {
         if (type !== "COMPONENT_SET") await small(n);
         frameBody(e, n, list);
       }
-      let clip = e.clip;
-      if ((type === "FRAME" || type === "COMPONENT") && n.clipsContent === true && n.absoluteBoundingBox) {
-        clip = { box: n.absoluteBoundingBox, name: n.name, up: e.clip };
-      }
+      const clip = type === "FRAME" || type === "COMPONENT" ? auditClipOf(n, e.clip) : e.clip;
       const alpha = e.alpha * (typeof n.opacity === "number" ? n.opacity : 1);
       const lay = (type === "FRAME" || type === "COMPONENT") && n.layoutMode !== "NONE";
       const onBoard = type === "PAGE" || type === "SECTION";  // each frame on a page or in a section is a screen

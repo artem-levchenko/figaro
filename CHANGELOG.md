@@ -9,6 +9,27 @@ file; the release notes say when it has to be imported again.
 
 ## [Unreleased]
 
+### Added
+
+- **The Reviewer sees content that a frame cuts off: a new `h.audit` rule, `content-clipped`.** Until now only a
+  text cut by its frame was a note. Now a drawing, an icon, an instance, an image or a stroke that a frame with
+  *Clip content* cuts is one too: an icon half out of its card, a button's outside stroke cut by the frame it
+  sits flush in, a square logo that a round 20 × 20 frame turns into a circle. What is made to be cut stays
+  quiet: a photo cropped past both edges, a big backdrop shape, a fade or a glow, a mask, a frame that scrolls,
+  and an avatar or a photo in a round frame (by its name). It comes right after `text-clipped`, the second
+  loudest rule.
+- **A note of the Reviewer can be marked On purpose.** Until now a note you didn't send came back on the next
+  check. Now each note in the window has **On purpose**: the note leaves, and the Reviewer won't raise its rule
+  on those layers again in that file, after a restart too. The agent's `figaro notes` lists what you marked, so
+  it leaves those alone. The Reviewer's row says how many layers are marked, with a **Clear** that raises them
+  again. A window shows On purpose only with a bridge that has it.
+
+### Changed
+
+- **`h.audit` counts the frames that clip above the layer it checks.** The Reviewer audits each changed layer on
+  its own; a text cut by a frame above it, which the change didn't touch, was no note. Now it is, and so is
+  content cut that way.
+
 ## [1.10.0] — 2026-11-04
 
 ### Added
