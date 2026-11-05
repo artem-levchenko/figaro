@@ -102,7 +102,7 @@ def test_the_switch_is_off_in_every_file_until_turned_on_and_is_kept_by_file_key
         async with FakePlugin(c, name="Draft", key="KEY1", caps=CAPS) as p, \
                 FakePlugin(c, name="Other", key="KEY2", caps=CAPS) as q:
             off = {"on": False, "state": "off", "agent": None, "layers": 0, "since": None, "at": None,
-                   "notes": [], "expired": False, "sent": 0, "left": 0}
+                   "notes": [], "expired": False, "sent": 0, "left": 0, "intentional": 0}
             assert row(p) == off and island(q, "Other")["reviewer"] == off
             await turn_on(p)
             assert row(p)["state"] == "waiting" and island(q, "Other")["reviewer"]["on"] is False
@@ -350,6 +350,128 @@ def test_all_fine_sends_nothing():
     run(go())
 
 
+# ─── notes marked on purpose ──────────────────────────────────────────────
+
+def marks():
+    return figaro_token.token_path(bridge.PORT).parent / "reviewer-intentional.json"
+
+
+async def mark(p, note, at=None):
+    r = row(p)
+    await p.ws.send_str(json.dumps({"type": "review-intentional", "doc": island(p, "Draft")["doc"],
+                                    "note": note, "at": r["at"] if at is None else at}))
+
+
+def test_a_note_marked_on_purpose_leaves_and_is_not_raised_again_in_the_file():
+    async def go():
+        c = await make_client()
+        async with plugin(c) as p:
+            await turn_on(p)
+            await write(c)
+            await done(c)
+            assert await until(lambda: row(p)["state"] == "notes")
+            await mark(p, "n2")  # n1 is the missing font, the louder rule
+            assert await until(lambda: [n["id"] for n in row(p)["notes"]] == ["n1"])
+            assert row(p)["state"] == "notes" and row(p)["intentional"] == 2
+            assert "_ids" not in row(p)["notes"][0]
+            assert island(p, "Draft")["recent"][0]["summary"] == "Marked on purpose: Colour isn't a token"
+            assert json.loads(marks().read_text(encoding="utf-8")) == {"KEY1": {"unbound-color": ["5:6", "5:7"]}}
+            await answer(p, ["n1"])
+            got = await notes(c)
+            assert (got["state"], got["total"], got["left"]) == ("sent", 2, 0)
+            assert [n["rule"] for n in got["notes"]] == ["missing-font"]
+            (m,) = got["marked"]
+            assert (m["rule"], m["title"], [l["id"] for l in m["layers"]]) == \
+                ("unbound-color", "Colour isn't a token", ["5:6", "5:7"])
+            # the next check finds the same: the marked rule on those layers is not raised
+            await write(c)
+            await done(c)
+            assert await until(lambda: row(p)["state"] == "notes")
+            assert [n["rule"] for n in row(p)["notes"]] == ["missing-font"]
+            await answer(p, [])
+            assert "marked" not in await notes(c)  # only the round they were marked in says so
+        await c.close()
+
+        bridge_review.MARKED.clear()  # the bridge starts again: the file keeps its marks
+        bridge_review.load()
+        assert bridge_review.MARKED == {"KEY1": {"unbound-color": {"5:6": None, "5:7": None}}}
+        c = await make_client()
+        async with plugin(c) as p:
+            await turn_on(p)
+            assert row(p)["intentional"] == 2
+            await p.ws.send_str(json.dumps({"type": "review-unmark", "doc": island(p, "Draft")["doc"]}))
+            assert await until(lambda: row(p)["intentional"] == 0)
+            assert json.loads(marks().read_text(encoding="utf-8")) == {}
+            await write(c)
+            await done(c)
+            assert await until(lambda: row(p)["state"] == "notes")
+            assert [n["rule"] for n in row(p)["notes"]] == ["missing-font", "unbound-color"]
+        await c.close()
+    run(go())
+
+
+def test_marking_every_note_on_purpose_answers_all_fine():
+    async def go():
+        c = await make_client()
+        async with plugin(c) as p:
+            await turn_on(p)
+            await write(c)
+            await done(c)
+            assert await until(lambda: row(p)["state"] == "notes")
+            await mark(p, "n2", at=row(p)["at"] + 5)  # an answer to replaced notes
+            await settle()
+            assert len(row(p)["notes"]) == 2 and row(p)["intentional"] == 0
+            await mark(p, "n2")
+            assert await until(lambda: len(row(p)["notes"]) == 1)
+            await mark(p, "n1")
+            assert await until(lambda: row(p)["state"] == "sent")
+            assert (row(p)["sent"], row(p)["left"], row(p)["intentional"]) == (0, 0, 3)
+            got = await notes(c)
+            assert got["state"] == "fine" and [m["rule"] for m in got["marked"]] == ["unbound-color", "missing-font"]
+        await c.close()
+    run(go())
+
+
+def test_unmarked_takes_only_the_marked_layers_of_the_marked_rule():
+    found = {"layers": 4, "notes": [
+        {"rule": "unbound-color", "text": "a", "count": 3, "ids": ["1:1", "1:2", "1:3"]},
+        {"rule": "unbound-color", "text": "b", "count": 1, "ids": ["1:4"]},
+        {"rule": "missing-font", "text": "c", "count": 1, "ids": ["1:1"]},
+        {"rule": "default-name", "text": "d", "count": 40, "ids": ["1:5"]}]}
+    out = bridge_review._unmarked(found, {"unbound-color": {"1:1": None, "1:4": None}, "default-name": {}})
+    assert out["notes"] == [{"rule": "unbound-color", "text": "a", "count": 2, "ids": ["1:2", "1:3"]},
+                            {"rule": "missing-font", "text": "c", "count": 1, "ids": ["1:1"]},
+                            {"rule": "default-name", "text": "d", "count": 40, "ids": ["1:5"]}]
+    assert out["layers"] == 4 and bridge_review._unmarked(found, None) is found
+
+
+def test_marks_are_capped_per_file(monkeypatch):
+    monkeypatch.setattr(bridge_review, "MARKS_MAX", 2)
+
+    async def go():
+        c = await make_client()
+        async with plugin(c) as p:
+            await turn_on(p)
+            await write(c)
+            await done(c)
+            assert await until(lambda: row(p)["state"] == "notes")
+            await mark(p, "n1")
+            await mark(p, "n2")
+            assert await until(lambda: row(p)["state"] == "sent")
+            # the font's mark came first and goes first
+            assert bridge_review.MARKED["KEY1"] == {"unbound-color": {"5:6": None, "5:7": None}}
+        await c.close()
+    run(go())
+
+
+def test_a_broken_marks_file_is_no_marks(tmp_path):
+    marks().parent.mkdir(parents=True, exist_ok=True)
+    for text in ("{", "[]", json.dumps({"K": [1], "L": {"rule": "x"}, "M": {"r": [1, "2:2"], "s": []}})):
+        marks().write_text(text, encoding="utf-8")
+        bridge_review.load()
+        assert bridge_review.MARKED == ({"M": {"r": {"2:2": None}}} if text.startswith('{"') else {})
+
+
 def test_recent_names_the_agent_the_answer_went_to():
     async def go():
         c = await make_client()
@@ -591,6 +713,27 @@ def test_notes_prints_what_the_designer_sent(monkeypatch, capsys):
         "   and 2 more layers",
         "2. Font is missing: Inter Bold is missing",
         "   \"Title\" (TEXT) 5:7",
+        "",
+        "They left 1 as it is. Fix these two, then run figaro done again."]
+
+
+def test_notes_prints_the_notes_marked_on_purpose(monkeypatch, capsys):
+    marked = [{"rule": "content-clipped", "title": "Content is cut off", "text": "x",
+               "layers": [{"id": "5:6", "name": "Logo", "type": "RECTANGLE"}], "more": 2}]
+    rc, out, _, _ = cli(monkeypatch, capsys, "notes", "-A", "designer",
+                        bridge_reply={"ok": True, "state": "fine", "marked": marked})
+    assert rc == 0 and out.splitlines() == [
+        "The designer looked at the reviewer's notes: all fine, nothing to fix.",
+        "",
+        "The designer marked these as on purpose: leave them as they are. The reviewer won't raise "
+        "them on these layers again:",
+        "- Content is cut off: \"Logo\" 5:6, 2 more layers"]
+    rc, out, _, _ = cli(monkeypatch, capsys, "notes", "-A", "designer", bridge_reply=dict(SENT, marked=marked))
+    assert out.splitlines()[-5:] == [
+        "",
+        "The designer marked these as on purpose: leave them as they are. The reviewer won't raise "
+        "them on these layers again:",
+        "- Content is cut off: \"Logo\" 5:6, 2 more layers",
         "",
         "They left 1 as it is. Fix these two, then run figaro done again."]
 

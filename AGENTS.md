@@ -189,6 +189,12 @@ Then read `run.jsonl` (commands, errors, the final report) and clean up what it 
   stay plain in `details`, as the 1.8.0 window reads them; a 1.8.0 bridge sends no `names`, and the id is printed alone.
   The window shows the summary and the chips; Copy for chat (`reviewerText`) and
   `review_text.py`, the CLI's side (the text `figaro notes` prints), list each line under its summary.
+  A note's On purpose (`review-intentional`, with the notes' `at`) marks its rule on its layers (all the ids the
+  check gave, up to 30 per line of `h.audit`) in `reviewer-intentional.json` next to the token, by file key; the
+  check then leaves them out (`_unmarked`), and the note leaves the ones waiting (none left: the answer is all
+  fine). The agent's answer lists the round's marks (`marked`). The board's `reviewer.intentional` counts the
+  file's marked layers, and the row's Clear (`review-unmark`) forgets them. A window shows On purpose only when
+  the board has `intentional`, so an older bridge shows none; an older window ignores the key.
 - `bridge_idle.py` — the bridge exits after `--idle-exit` with no plugins and no requests; on any exit it
   closes the plugins' connections at once.
 - `figma_links.py` — Figma links: the file key and node id in a link, links to layers for reports.

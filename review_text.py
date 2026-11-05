@@ -15,6 +15,22 @@ def _n(n, word):
     return f"{n} {word}" + ("" if n == 1 else "s")
 
 
+def _marked(resp):
+    """The notes the designer marked as on purpose in this round, if any: a line for each."""
+    marked = [m for m in resp.get("marked") or [] if isinstance(m, dict)]
+    if not marked:
+        return []
+    lines = ["", "The designer marked these as on purpose: leave them as they are. The reviewer won't "
+                 "raise them on these layers again:"]
+    for m in marked:
+        layers = [f"\"{l.get('name')}\" {l.get('id')}" for l in m.get("layers") or [] if isinstance(l, dict)]
+        more = int(m.get("more") or 0)
+        if more:
+            layers.append(f"{_n(more, 'more layer')}")
+        lines.append(f"- {m.get('title')}" + (f": {', '.join(layers)}" if layers else ""))
+    return lines
+
+
 def render(resp, agent):
     """The lines for one answer of /notes."""
     state = resp.get("state")
@@ -47,13 +63,14 @@ def render(resp, agent):
                     lines.append(f"{pad}\"{layer.get('name')}\" ({layer.get('type')}) {layer.get('id')}{url}")
                 if note.get("more"):
                     lines.append(f"{pad}and {_n(int(note['more']), 'more layer')}")
+        lines += _marked(resp)
         lines.append("")
         fix = {1: "Fix this one", 2: "Fix these two"}.get(len(notes), "Fix these")
         lines.append((f"They left {left} as it is. " if left else "")
                      + f"{fix}, then run figaro done again.")
         return lines
     if state == "fine":
-        return ["The designer looked at the reviewer's notes: all fine, nothing to fix."]
+        return ["The designer looked at the reviewer's notes: all fine, nothing to fix."] + _marked(resp)
     if state == "expired":
         return [WAITED]
     if state == "pending":
