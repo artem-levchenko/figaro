@@ -775,6 +775,10 @@ LINES = {
         'is cut off by the frame "Header" and "Footer", which clips its content; make room for the text or turn the clipping off',
         "runs out of its own box (20 px high, the text needs 41); make the box taller or the text shorter",
         "runs out of its own box on the side; make the box wider or the text shorter"],
+    "content-clipped": [
+        'sticks out of the frame "Card", which clips its content, so 10 px of it is cut off on the right; move it inside, or turn the clipping off',
+        'its stroke is cut off by the frame "Row", which clips its content; set the stroke inside, or make room for it',
+        'is cut by the rounded corners (radius 10) of the frame "Logo", which clips its content; fine for an avatar or a photo, otherwise round the layer itself or turn the clipping off'],
     "zero-size": ["is 0 × 12 px, so nothing shows; give it a size or delete it",
                   "text with no visible characters; write the text or delete the layer"],
     "low-contrast": ["contrast 2.3:1 of #AAAAAA on #FFFFFF, needs 4.5:1; use a stronger colour",
@@ -803,6 +807,7 @@ LINES = {
 SUMMARIES = {
     "missing-font": "2 texts use fonts that are not installed here, so they show in stand-ins; switch them to installed fonts",
     "text-clipped": "4 texts are cut off or run out of their boxes; make room for the text or turn the clipping off",
+    "content-clipped": "3 layers are cut off by frames that clip their content; move them inside, or turn the clipping off",
     "zero-size": "2 layers have no size or no visible text, so nothing shows; give them a size or delete them",
     "low-contrast": "contrast is too low on 2 texts, as low as 1.9:1; use stronger colours",
     "low-contrast-ui": "icon contrast is too low on 2 layers, as low as 1.5:1; use stronger colours",
