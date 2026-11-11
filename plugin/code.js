@@ -9,7 +9,7 @@ figma.showUI(__html__, { width: UI_WIDTH, height: 70, title: "Figaro Relay", the
 // disk and asks for a re-Run when they differ, because a running plugin keeps
 // the code it started with. Bump it on every change to plugin/ —
 // tests/test_plugin_version.py fails until you do.
-const PLUGIN_VERSION = "2026-11-11.3";
+const PLUGIN_VERSION = "2026-11-11.4";
 
 // What this build can do beyond a plain exec, so the bridge knows which
 // requests it may send (an older build gets `figaro reload` first).
