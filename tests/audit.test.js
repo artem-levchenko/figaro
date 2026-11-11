@@ -323,12 +323,24 @@ const ids = (notes) => notes.map((n) => n.id);
     // what shows decides where Figma gives the render bounds (absoluteRenderBounds); Figma cuts them by
     // the frame that clips, so here no render box reaches past the 100 x 100 card
     const rbOf = (n, box) => Object.assign(n, { absoluteRenderBounds: box });
-    const padded = rbOf(N("INSTANCE", { name: "Icon", x: 80, y: 10, width: 24, height: 24 }), { x: 82, y: 14, width: 16, height: 16 });
-    padded.findAllWithCriteria = () => [];
-    check("content-clipped: an icon whose padded box sticks out 4 px while its glyph is inside is quiet",
+    // an instance's render bounds are its whole box, cut at the frame's edge; what it draws is its glyph
+    const glyph = (x, width) => rbOf(VEC("#111111", { x, y: 14, width, height: 16 }), { x, y: 14, width: Math.min(width, 100 - x), height: 16 });
+    const icon24 = (x, kids) => {
+      const n = rbOf(N("INSTANCE", { name: "Icon", x, y: 10, width: 24, height: 24 }, kids), { x, y: 10, width: 100 - x, height: 24 });
+      n.findAllWithCriteria = () => [];
+      return n;
+    };
+    const padded = icon24(80, [glyph(84, 14)]);
+    check("content-clipped: an icon whose padded box sticks out 4 px while its glyph stops 2 px short of the edge is quiet",
           (await only("content-clipped", clip([padded]))).length, 0);
-    const halfOut = rbOf(N("INSTANCE", { name: "Icon", x: 90, y: 10, width: 24, height: 24 }), { x: 92, y: 14, width: 8, height: 16 });
-    halfOut.findAllWithCriteria = () => [];
+    const nested = icon24(80, [rbOf(N("FRAME", { name: "Glyph box", x: 82, y: 12, width: 20, height: 20 }, [glyph(84, 14)]), { x: 82, y: 12, width: 18, height: 20 })]);
+    check("content-clipped: the same icon with its glyph one unpainted frame deeper is quiet",
+          (await only("content-clipped", clip([nested]))).length, 0);
+    const filled = icon24(80, [glyph(84, 14)]);
+    filled.fills = [solid("#EEEEEE")];
+    check("content-clipped: an icon that paints its own box is cut, the box shows",
+          ids(await only("content-clipped", clip([filled]))).includes(filled.id), true);
+    const halfOut = icon24(90, [glyph(92, 20)]);
     check("content-clipped: an icon whose drawn part reaches the frame's edge is still cut",
           ids(await only("content-clipped", clip([halfOut]))), [halfOut.id]);
     const pen = (props) => rbOf(VEC("#2E6BFF", Object.assign({ x: 0, y: 50, width: 100, height: 0, fills: [], strokes: [solid("#2E6BFF")], strokeWeight: 2, strokeAlign: "CENTER" }, props)),

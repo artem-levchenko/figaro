@@ -9,7 +9,7 @@ figma.showUI(__html__, { width: UI_WIDTH, height: 70, title: "Figaro Relay", the
 // disk and asks for a re-Run when they differ, because a running plugin keeps
 // the code it started with. Bump it on every change to plugin/ —
 // tests/test_plugin_version.py fails until you do.
-const PLUGIN_VERSION = "2026-11-11.1";
+const PLUGIN_VERSION = "2026-11-11.2";
 
 // What this build can do beyond a plain exec, so the bridge knows which
 // requests it may send (an older build gets `figaro reload` first).
@@ -2958,7 +2958,30 @@ function auditShownBox(n) {
   const rb = n.absoluteRenderBounds;
   if (!rb || typeof rb.x !== "number" || typeof rb.width !== "number") return null;
   if (Array.isArray(n.effects) && n.effects.some((x) => x && x.visible !== false && (x.type === "DROP_SHADOW" || x.type === "LAYER_BLUR"))) return null;
-  return rb;
+  return auditDrawnBox(n, 0) || rb;
+}
+
+// A frame's or an instance's render bounds cover its whole box, even when it paints nothing itself: an
+// icon component with padding "shows" up to its box's edge while its glyph stops short of it. So what
+// shows of a layer that has no fill, stroke or effect of its own is what its children draw. Bounded in
+// depth and in children: past that, the layer's own render bounds stand.
+const AUDIT_DRAWN_DEPTH = 4, AUDIT_DRAWN_KIDS = 60;
+function auditDrawnBox(n, depth) {
+  const rb = n.absoluteRenderBounds;
+  if (!rb || typeof rb.x !== "number" || typeof rb.width !== "number") return null;
+  const kids = n.children;
+  const bare = Array.isArray(kids) && kids.length > 0 && kids.length <= AUDIT_DRAWN_KIDS && depth < AUDIT_DRAWN_DEPTH &&
+    Array.isArray(n.fills) && auditShown(n.fills).length === 0 && !auditStroked(n) &&
+    !(Array.isArray(n.effects) && n.effects.some((x) => x && x.visible !== false));
+  if (!bare) return rb;
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const k of kids) {
+    if (k.visible === false) continue;
+    const r = auditDrawnBox(k, depth + 1);
+    if (!r) continue;
+    x0 = Math.min(x0, r.x); y0 = Math.min(y0, r.y); x1 = Math.max(x1, r.x + r.width); y1 = Math.max(y1, r.y + r.height);
+  }
+  return x1 > x0 && y1 > y0 ? { x: x0, y: y0, width: x1 - x0, height: y1 - y0 } : rb;
 }
 
 // The sides a stroke grows toward: left, top, right, bottom. A flat line's stroke stops at the line's

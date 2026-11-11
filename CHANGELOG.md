@@ -19,7 +19,8 @@ file; the release notes say when it has to be imported again.
   and an avatar or a photo in a round frame (by its name). It comes right after `text-clipped`, the second
   loudest rule. It judges what shows, not the box, where Figma gives it (`absoluteRenderBounds`, as
   `text-clipped` does): an icon component with built-in padding, whose box sticks out of the frame while its
-  glyph stops short of the edge, is quiet. So is a full-width pen line with a centred stroke: a flat line's
+  glyph stops short of the edge, is quiet (what a frame or an instance with no fill, stroke or effect of its
+  own shows is what its children draw). So is a full-width pen line with a centred stroke: a flat line's
   stroke stops at its ends, unless its caps are round or square. A layer with a drop shadow or a blur is
   judged by its box, as before, because the render bounds count the effect.
 - **A note of the Reviewer can be marked On purpose.** Until now a note you didn't send came back on the next
