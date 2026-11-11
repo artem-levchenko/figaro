@@ -1648,11 +1648,15 @@ const RELEASE = "https://github.com/artem-levchenko/figaro/releases/tag/v1.2.0";
     // on purpose: a note the designer means; the bridge leaves its rule out on those layers from then on
     again({ state: "notes", layers: 24, notes, at: 1050, intentional: 0 });
     await env.clock.advance(400);
-    check("on purpose: a button under each note", (env.app().match(/<button type="button" class="op" data-act="rv-purpose" data-id="n\d"/g) || []).length, 3);
+    check("on purpose: a button on each layer line, and one for the whole note only where it holds several",
+          [(env.app().match(/class="op" data-act="rv-purpose" data-id="n\d" data-layer="[^"]+"/g) || []).length,
+           (env.app().match(/class="op" data-act="rv-purpose" data-id="n\d" title="[^"]*">All on purpose/g) || []).length], [4, 1]);
     env.click("rv-tick", "here", { id: "n3" });
+    env.click("rv-purpose", "here", { id: "n2", layer: "12:45" });
+    check("…a layer's button marks that layer, with the notes' at", env.sent("review-intentional"), [{ type: "review-intentional", doc: "doc:KEY1", note: "n2", at: 1050, layers: ["12:45"] }]);
     env.click("rv-purpose", "here", { id: "n2" });
-    check("…it marks the note, with the notes' at", env.sent("review-intentional"), [{ type: "review-intentional", doc: "doc:KEY1", note: "n2", at: 1050 }]);
-    again({ state: "notes", layers: 24, notes: [notes[0], notes[2]], at: 1050, intentional: 2 });
+    check("…the whole note's, without layers (an older bridge's meaning)", env.sent("review-intentional")[1], { type: "review-intentional", doc: "doc:KEY1", note: "n2", at: 1050 });
+    again({ state: "notes", layers: 24, notes: [notes[0], notes[2]], at: 1050, intentional: 2 });  // 2 layers, however many rules
     await env.clock.advance(400);
     check("…the note leaves, the other ticks stay, and no Clear while notes wait",
           [/Send 1 to designer/.test(env.app()), (env.app().match(/data-act="rv-purpose"/g) || []).length, /rv-unmark/.test(env.app())], [true, 2, false]);

@@ -356,10 +356,13 @@ def marks():
     return figaro_token.token_path(bridge.PORT).parent / "reviewer-intentional.json"
 
 
-async def mark(p, note, at=None):
+async def mark(p, note, at=None, layers=None):
     r = row(p)
-    await p.ws.send_str(json.dumps({"type": "review-intentional", "doc": island(p, "Draft")["doc"],
-                                    "note": note, "at": r["at"] if at is None else at}))
+    m = {"type": "review-intentional", "doc": island(p, "Draft")["doc"],
+         "note": note, "at": r["at"] if at is None else at}
+    if layers is not None:
+        m["layers"] = layers
+    await p.ws.send_str(json.dumps(m))
 
 
 def test_a_note_marked_on_purpose_leaves_and_is_not_raised_again_in_the_file():
@@ -406,6 +409,54 @@ def test_a_note_marked_on_purpose_leaves_and_is_not_raised_again_in_the_file():
             await done(c)
             assert await until(lambda: row(p)["state"] == "notes")
             assert [n["rule"] for n in row(p)["notes"]] == ["missing-font", "unbound-color"]
+        await c.close()
+    run(go())
+
+
+THREE = dict(FOUND, layers=4, notes=[
+    {"rule": "unbound-color", "text": "#2F6BFF, bg/brand matches", "count": 3, "ids": ["5:6", "5:7", "5:8"]},
+    {"rule": "missing-font", "text": "Inter Bold is missing", "count": 1, "ids": ["5:7"]}],
+    info=dict(FOUND["info"], **{"5:8": {"name": "Badge", "type": "FRAME"}}))
+
+
+def test_one_layer_of_a_note_is_marked_on_purpose_and_the_rest_stay():
+    async def go():
+        c = await make_client()
+        async with plugin(c, THREE) as p:
+            await turn_on(p)
+            await write(c)
+            await done(c)
+            assert await until(lambda: row(p)["state"] == "notes")
+            n2 = lambda: next(n for n in row(p)["notes"] if n["rule"] == "unbound-color")
+            await mark(p, "n2", layers=["9:9"])  # not a layer of the note: nothing happens
+            await settle()
+            assert [l["id"] for l in n2()["layers"]] == ["5:6", "5:7", "5:8"] and row(p)["intentional"] == 0
+            await mark(p, "n2", layers=["5:7"])
+            assert await until(lambda: [l["id"] for l in n2()["layers"]] == ["5:6", "5:8"])
+            assert n2()["id"] == "n2" and n2()["more"] == 0
+            assert row(p)["state"] == "notes" and [n["id"] for n in row(p)["notes"]] == ["n1", "n2"]
+            assert row(p)["intentional"] == 1
+            assert json.loads(marks().read_text(encoding="utf-8")) == {"KEY1": {"unbound-color": ["5:7"]}}
+            first = row(p)["at"]
+            await answer(p, ["n2"])  # the rest can still be sent to the agent
+            got = await notes(c)
+            assert got["state"] == "sent"
+            assert [[l["id"] for l in n["layers"]] for n in got["notes"]] == [["5:6", "5:8"]]
+            (m,) = got["marked"]
+            assert (m["rule"], [l["id"] for l in m["layers"]]) == ("unbound-color", ["5:7"])
+            # the next check raises the other layers again, and not the marked one
+            await write(c)
+            await done(c)
+            assert await until(lambda: row(p)["state"] == "notes" and row(p)["at"] != first)
+            assert [l["id"] for l in n2()["layers"]] == ["5:6", "5:8"]
+            # the last layers: marking them one by one leaves the note as marking the whole note does
+            await mark(p, "n2", layers=["5:6"])
+            assert await until(lambda: [l["id"] for l in n2()["layers"]] == ["5:8"])
+            await mark(p, "n2", layers=["5:8"])
+            assert await until(lambda: [n["id"] for n in row(p)["notes"]] == ["n1"])
+            assert row(p)["intentional"] == 3
+            await mark(p, "n1")  # no layers: the whole note, as an older window does
+            assert await until(lambda: row(p)["state"] == "sent")
         await c.close()
     run(go())
 

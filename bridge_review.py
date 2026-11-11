@@ -16,11 +16,13 @@ The file's switch is kept per file key in `reviewer.json` next to the token
 From the window: `reviewer` {doc, on}, `review-answer` {doc, send: [note ids]}
 and the Stop of the row (`stop` with agent "reviewer"; bridge_board.handle).
 
-A note the designer marks as on purpose (`review-intentional` {doc, note, at}) leaves the
-notes, and its rule is not raised again on its layers in that file: the marks are kept per
-file key in `reviewer-intentional.json` ({"<fileKey>": {"<rule>": [layer ids]}}), and
-`review-unmark` {doc} clears the file's. The board's `intentional` counts the file's marked
-layers, once each however many rules mark one; the agent's answer lists the notes marked in its round (`marked`).
+A note the designer marks as on purpose (`review-intentional` {doc, note, at, layers?}) leaves the
+notes, and its rule is not raised again on its layers in that file; with `layers`, a list of the
+note's layer ids, only those layers are marked and the note keeps the rest (an older window sends
+none: the whole note). The marks are kept per file key in `reviewer-intentional.json`
+({"<fileKey>": {"<rule>": [layer ids]}}), and `review-unmark` {doc} clears the file's. The board's
+`intentional` counts the file's marked layers, once each; the agent's answer lists what was marked
+in its round (`marked`).
 """
 
 from __future__ import annotations
@@ -540,7 +542,7 @@ async def _on_done(request, conn_id, doc, agent, ids):
                             f"all good."}
         at = time.time()
         ASKING[doc] = {"agent": agent, "notes": _public(notes), "at": at, "expired": False,
-                       "ids": {n["id"]: n["_ids"] for n in notes}, "marked": []}
+                       "ids": {n["id"]: n["_ids"] for n in notes}, "marked": [], "found": found}
         _set(doc, "notes", agent=agent, layers=layers)
         STATE[doc]["at"] = at  # the window sends it back with its answer: which notes it answers
         _recent(doc, {"agent": AGENT, "summary": f"Checked {_n(layers, 'layer')}",
@@ -643,10 +645,29 @@ def answer(doc, send, at=None):
     return True
 
 
-def intentional(doc, note, at=None):
+def _refresh(doc, asking):
+    """The waiting notes again from the check's own answer, less what is marked now: a note that
+    lost some of its layers keeps its id and its ticks, and its text, count and lines follow the layers
+    left. (No `info` for a layer the first check did not name, so the chips are the ones it did.)"""
+    fresh = _merge(_unmarked(asking["found"], MARKED.get(_key(doc))))
+    old = {n["rule"]: n for n in asking["notes"]}
+    notes, ids = [], {}
+    for n in fresh:
+        prev = old.get(n["rule"])
+        if prev is None:
+            continue
+        shown = [l for l in prev["layers"] if l["id"] in n["_ids"]] or n["layers"]
+        total = len(n["layers"]) + n["more"]
+        ids[prev["id"]] = n["_ids"]
+        notes.append(_public([dict(n, id=prev["id"], layers=shown, more=max(0, total - len(shown)))])[0])
+    asking["notes"], asking["ids"] = notes, ids
+
+
+def intentional(doc, note, at=None, layers=None):
     """The designer marks a note waiting for them as on purpose: its rule is not raised again on
-    its layers in this file, and the note leaves the ones the agent waits on. With none left, that
-    is the answer: all fine."""
+    its layers in this file, and the note leaves the ones the agent waits on. With `layers`, only
+    those of the note's layers are marked and the note keeps the rest; marking the last ones is
+    marking the note. With none of the notes left, that is the answer: all fine."""
     asking = ASKING.get(doc)
     if not asking or not isinstance(note, str):
         return False
@@ -656,9 +677,18 @@ def intentional(doc, note, at=None):
     hit = next((n for n in asking["notes"] if n["id"] == note), None)
     if hit is None:
         return False
+    mine_all = asking.get("ids", {}).get(note) or [l["id"] for l in hit["layers"]]
+    if layers is None:
+        chosen = list(mine_all)
+    elif isinstance(layers, list):
+        chosen = [i for i in dict.fromkeys(layers) if isinstance(i, str) and i in mine_all]
+    else:
+        chosen = []
+    if not chosen:
+        return False
     rules = MARKED.setdefault(_key(doc), {})
     mine = rules.setdefault(hit["rule"], {})
-    for i in asking.get("ids", {}).get(note) or [l["id"] for l in hit["layers"]]:
+    for i in chosen:
         mine.pop(i, None)  # the newest at the end
         mine[i] = None
     while sum(len(ids) for ids in rules.values()) > MARKS_MAX:
@@ -667,10 +697,20 @@ def intentional(doc, note, at=None):
         if not rules[oldest]:
             rules.pop(oldest)
     _save_marks()
-    asking["notes"] = [n for n in asking["notes"] if n["id"] != note]
+    whole = layers is None
+    if whole:
+        taken = hit["layers"]
+        more = hit.get("more", 0)
+    else:
+        named = {l["id"]: l for l in hit["layers"]}
+        taken = [named.get(i) or dict(id=i, **_named({})) for i in chosen]
+        more = 0
+    if whole:
+        asking["notes"] = [n for n in asking["notes"] if n["id"] != note]
+    else:
+        _refresh(doc, asking)
     asking.setdefault("marked", []).append(
-        {"rule": hit["rule"], "title": hit["title"], "text": hit["text"], "layers": hit["layers"],
-         "more": hit.get("more", 0)})
+        {"rule": hit["rule"], "title": hit["title"], "text": hit["text"], "layers": taken, "more": more})
     _recent(doc, {"agent": "you", "summary": f"Marked on purpose: {hit['title']}"})
     print(f"[reviewer] {hit['rule']} marked on purpose in {doc}")
     if not asking["notes"]:
@@ -702,7 +742,7 @@ def window_message(m):
         elif mtype == "review-answer":
             answer(doc, m.get("send"), m.get("at"))
         elif mtype == "review-intentional":
-            intentional(doc, m.get("note"), m.get("at"))
+            intentional(doc, m.get("note"), m.get("at"), m.get("layers"))
         else:
             unmark(doc)
     return True

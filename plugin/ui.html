@@ -272,6 +272,8 @@ html.rainbow .px i:nth-child(9) { --c: hsl(275 75% 62%); animation-delay: 0ms; }
 .rq .showall { margin-left: auto; padding: 0 4px; border: 0; background: none; color: var(--is-dim); font: 500 11px/18px var(--sys); cursor: pointer; }
 .rq .showall:hover { color: var(--is-text); }
 .rql .op { display: block; margin-top: 3px; padding: 0; border: 0; background: none; color: var(--is-dim); font: 500 11px/16px var(--sys); cursor: pointer; }
+.rql .layers .ly { flex: 0 1 100%; min-width: 0; display: flex; align-items: center; gap: 6px; }
+.rql .ly .op { margin: 0 0 0 auto; flex: none; }
 .rql .op:hover { color: var(--is-text); }
 .rvm { display: flex; align-items: center; }
 .rvm .showall { margin-left: auto; padding: 0 4px; border: 0; background: none; color: var(--is-dim); font: 500 11px/15px var(--sys); cursor: pointer; }
@@ -1255,10 +1257,14 @@ function reviewerAsk(f, r) {
       const gone = f.here && goneLayers.has(l.id);
       const cls = "layer" + (type === "COMPONENT" || type === "INSTANCE" ? " comp" : "") + (gone ? " gone" : "");
       const inner = `${iconOf(type)}<span>${esc(l.name)}</span>`;
-      return f.here ? `<button type="button" class="${cls}" data-act="layer" data-id="${esc(l.id)}" title="${gone ? "Not in the file any more" : "Select it in Figma"}">${inner}</button>` : `<span class="${cls}">${inner}</span>`;
+      const chip = f.here ? `<button type="button" class="${cls}" data-act="layer" data-id="${esc(l.id)}" title="${gone ? "Not in the file any more" : "Select it in Figma"}">${inner}</button>` : `<span class="${cls}">${inner}</span>`;
+      // one layer of the note on purpose: the note keeps the others
+      return r.intentional === null ? chip
+        : `<div class="ly">${chip}<button type="button" class="op" data-act="rv-purpose" data-id="${esc(nt.id)}" data-layer="${esc(l.id)}" title="The reviewer won't raise this layer for this rule again in this file">On purpose</button></div>`;
     }).join("") + (nt.more ? `<span class="more">+${nt.more}</span>` : "");
-    const purpose = r.intentional === null ? ""
-      : `<button type="button" class="op" data-act="rv-purpose" data-id="${esc(nt.id)}" title="The reviewer won't raise it on these layers again in this file">On purpose</button>`;
+    // the whole note, only where it holds more than the one line that has its own button
+    const purpose = r.intentional === null || (nt.layers.length === 1 && !nt.more) ? ""
+      : `<button type="button" class="op" data-act="rv-purpose" data-id="${esc(nt.id)}" title="The reviewer won't raise it on any of its layers again in this file">All on purpose</button>`;
     return `<li class="${on ? "on" : ""}"><button type="button" class="cb" data-act="rv-tick" data-id="${esc(nt.id)}" role="checkbox" aria-checked="${on}" aria-label="${esc(nt.title)}">${on ? ICON.done : ""}</button>`
       + `<div><b>${esc(nt.title)}</b>${nt.text ? ` <em>· ${esc(nt.text)}</em>` : ""}${chips ? `<div class="layers">${chips}</div>` : ""}${purpose}</div></li>`;
   }).join("");
@@ -2089,7 +2095,9 @@ function act(name, fid, el) {
     if (ids.length) parent.postMessage({ pluginMessage: { type: "select", id: ids[0], ids } }, "*");
   } else if (name === "rv-purpose" && f && f.doc && rvOf(f)) {
     cue("layer");
-    send({ type: "review-intentional", doc: f.doc, note: String(el.dataset.id), at: rvOf(f).stamp });
+    const m = { type: "review-intentional", doc: f.doc, note: String(el.dataset.id), at: rvOf(f).stamp };
+    if (el.dataset.layer) m.layers = [String(el.dataset.layer)];  // without it the bridge marks the whole note, as an older window does
+    send(m);
   } else if (name === "rv-unmark" && f && f.doc && rvOf(f)) {
     cue("layer");
     clearing = f.doc;

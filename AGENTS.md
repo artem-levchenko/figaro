@@ -189,10 +189,13 @@ Then read `run.jsonl` (commands, errors, the final report) and clean up what it 
   stay plain in `details`, as the 1.8.0 window reads them; a 1.8.0 bridge sends no `names`, and the id is printed alone.
   The window shows the summary and the chips; Copy for chat (`reviewerText`) and
   `review_text.py`, the CLI's side (the text `figaro notes` prints), list each line under its summary.
-  A note's On purpose (`review-intentional`, with the notes' `at`) marks its rule on its layers (all the ids the
-  check gave, up to 30 per line of `h.audit`) in `reviewer-intentional.json` next to the token, by file key; the
-  check then leaves them out (`_unmarked`), and the note leaves the ones waiting (none left: the answer is all
-  fine). The agent's answer lists the round's marks (`marked`). The board's `reviewer.intentional` counts the
+  A layer's On purpose (`review-intentional`, with the notes' `at` and `layers`: ids of the note's layers) marks the
+  note's rule on those layers; without `layers` (an older window, or All on purpose) it marks all the ids the check
+  gave, up to 30 per line of `h.audit`. A note with layers left stays, its text and lines following them
+  (`_refresh`, from the check's own answer kept in `ASKING`), and its ticks too; marking the last ones is marking
+  the note. A layer shown only as `+N` is marked with All on purpose. The marks are kept in
+  `reviewer-intentional.json` next to the token, by file key; the check then leaves them out (`_unmarked`), and a
+  note with none left leaves the ones waiting (none left at all: the answer is all fine). The agent's answer lists the round's marks (`marked`). The board's `reviewer.intentional` counts the
   file's marked layers, each once however many rules mark it, and the row's Clear asks "Clear marks on N layers? Yes / No" in the row (no native `confirm()`; No, or the row going away, puts it back), and Yes (`review-unmark`) forgets them. A window shows On purpose only when
   the board has `intentional`, so an older bridge shows none; an older window ignores the key.
 - `bridge_idle.py` — the bridge exits after `--idle-exit` with no plugins and no requests; on any exit it

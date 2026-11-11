@@ -22,8 +22,10 @@ file; the release notes say when it has to be imported again.
   glyph is inside, and a full-width pen line whose centred stroke stops at its ends are quiet. A layer with a
   drop shadow or a blur is judged by its box, as before, because the render bounds count the effect.
 - **A note of the Reviewer can be marked On purpose.** Until now a note you didn't send came back on the next
-  check. Now each note in the window has **On purpose**: the note leaves, and the Reviewer won't raise its rule
-  on those layers again in that file, after a restart too. The agent's `figaro notes` lists what you marked, so
+  check. Now each layer line of a note in the window has **On purpose**: that layer leaves the note, and the
+  Reviewer won't raise the rule on it again in that file, after a restart too. The note keeps its other layers,
+  and they can still be sent to the agent; a note with several layers has **All on purpose** too, and marking
+  the last layer is marking the note. The agent's `figaro notes` lists what you marked, layer by layer, so
   it leaves those alone. The Reviewer's row says how many layers are marked (each layer once, however many rules mark it), with a
   **Clear** that raises them again after it asks "Clear marks on N layers? Yes / No" in the row. A window shows On purpose only with a bridge that has it.
 
