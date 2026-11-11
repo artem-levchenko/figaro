@@ -9,7 +9,7 @@ figma.showUI(__html__, { width: UI_WIDTH, height: 70, title: "Figaro Relay", the
 // disk and asks for a re-Run when they differ, because a running plugin keeps
 // the code it started with. Bump it on every change to plugin/ —
 // tests/test_plugin_version.py fails until you do.
-const PLUGIN_VERSION = "2026-11-05.5";
+const PLUGIN_VERSION = "2026-11-11.1";
 
 // What this build can do beyond a plain exec, so the bridge knows which
 // requests it may send (an older build gets `figaro reload` first).
@@ -2950,6 +2950,8 @@ function auditCuttable(n) {
 }
 
 // What of a layer shows, as Figma measures it (absoluteRenderBounds), or null to fall back to its box.
+// Figma has already cut these bounds by every frame that clips above the layer: they tell whether the
+// drawn part reaches a frame's edge, never how far past it the layer goes.
 // Render bounds include a shadow's or a blur's reach, which no frame cuts as content, so a layer with
 // one is not measured by them: it is judged by its box and stroke, as when Figma gives no bounds.
 function auditShownBox(n) {
@@ -2957,6 +2959,14 @@ function auditShownBox(n) {
   if (!rb || typeof rb.x !== "number" || typeof rb.width !== "number") return null;
   if (Array.isArray(n.effects) && n.effects.some((x) => x && x.visible !== false && (x.type === "DROP_SHADOW" || x.type === "LAYER_BLUR"))) return null;
   return rb;
+}
+
+// The sides a stroke grows toward: left, top, right, bottom. A flat line's stroke stops at the line's
+// ends unless its cap is round or square, so it grows only across the line.
+function auditStrokeSides(n, b) {
+  const capped = n.strokeCap === "ROUND" || n.strokeCap === "SQUARE";
+  const along = b.height >= 0.01 || capped, across = b.width >= 0.01 || capped;  // a horizontal line has no height
+  return [along, across, along, across];
 }
 
 // A glow or a fade, made to bleed: a layer blur, or gradients only and no stroke.
@@ -3249,7 +3259,8 @@ async function auditRun(root, opts, env) {
       if (c.scroll || o.width < 1 || o.height < 1) continue;
       if (b.x >= o.x + o.width || b.x + b.width <= o.x || b.y >= o.y + o.height || b.y + b.height <= o.y) return;  // all of it hidden: not a cut
       const past = [o.x - b.x, o.y - b.y, b.x + b.width - (o.x + o.width), b.y + b.height - (o.y + o.height)];  // left, top, right, bottom
-      // How far what shows reaches past the frame: an icon's padded box sticks out while its glyph is inside.
+      // Where what shows stops against each edge (0: at the edge, below: short of it). An icon's padded
+      // box sticks out while its glyph stops short of the edge: nothing of it is cut.
       const shown = rb ? [o.x - rb.x, o.y - rb.y, rb.x + rb.width - (o.x + o.width), rb.y + rb.height - (o.y + o.height)] : null;
       const seen = shown ? past.map((v, i) => (v > AUDIT_CUT && shown[i] < -1 ? 0 : v)) : past;
       const worst = Math.max.apply(null, seen);
@@ -3264,10 +3275,10 @@ async function auditRun(root, opts, env) {
         }
         return;
       }
-      // A stroke that reaches past the edge: by what it covers where Figma says, else by its width. A line
-      // flush with the frame has a stroke that stops at its ends.
-      const reach = shown ? Math.max.apply(null, shown) : worst + out;
-      if (out > 0 && reach > AUDIT_CUT) {
+      // A stroke the frame cuts: with its stroke the box passes an edge the stroke grows toward, and what
+      // shows reaches that edge. The render bounds can't say more: Figma has cut them at the edge too.
+      const grows = auditStrokeSides(n, b);
+      if (out > 0 && past.some((v, i) => grows[i] && v + out > AUDIT_CUT && (!shown || shown[i] >= -1))) {
         add("content-clipped", n, "its stroke is cut off by " + frame + "; set the stroke inside, or make room for it");
         return;
       }
