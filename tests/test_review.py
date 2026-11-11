@@ -441,6 +441,7 @@ def test_one_layer_of_a_note_is_marked_on_purpose_and_the_rest_stay():
             await answer(p, ["n2"])  # the rest can still be sent to the agent
             got = await notes(c)
             assert got["state"] == "sent"
+            assert got["total"] == 2  # n1 and n2: the note that kept two of its layers counts once
             assert [[l["id"] for l in n["layers"]] for n in got["notes"]] == [["5:6", "5:8"]]
             (m,) = got["marked"]
             assert (m["rule"], [l["id"] for l in m["layers"]]) == ("unbound-color", ["5:7"])

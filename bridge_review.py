@@ -630,7 +630,9 @@ def answer(doc, send, at=None):
     left = len(notes) - len(sent)
     agent = asking["agent"]
     marked = asking.get("marked") or []
-    total = len(notes) + len(marked)
+    # A note that lost some of its layers to a mark is still one of the notes: count a marked rule
+    # only when none of its note is left.
+    total = len(notes) + len({m["rule"] for m in marked} - {n["rule"] for n in notes})
     if sent:
         ANSWERS.setdefault(doc, {})[agent] = {"kind": "sent", "notes": sent, "total": total,
                                               "left": left, "marked": marked}
