@@ -1239,7 +1239,7 @@ function reviewerRow(f, r) {
   if (!shownMarks && clearing === f.doc) clearing = null;  // leaving the row puts it back
   const marks = !shownMarks ? ""
     : clearing === f.doc
-      ? `<p class="msg rvm">Clear marks on ${plural(r.intentional, "layer", "layers")}?<span class="ask"><button type="button" class="yn" data-act="rv-unmark-yes">Yes</button><button type="button" class="yn" data-act="rv-unmark-no">No</button></span></p>`
+      ? `<p class="msg rvm">Clear marks on ${plural(r.intentional, "layer", "layers")}?<span class="ask"><button type="button" class="yn" data-act="rv-unmark-no">No</button><button type="button" class="yn" data-act="rv-unmark-yes">Yes</button></span></p>`
       : `<p class="msg rvm">${plural(r.intentional, "layer", "layers")} marked on purpose<button type="button" class="showall" data-act="rv-unmark" title="The reviewer raises their notes again">Clear</button></p>`;
   return `<div class="${cls}"${data}><div class="ah">${avatar}<span class="nm rvn"><span>reviewer</span><span class="qm" data-hint="1">${QM}</span></span>`
     + `<span class="st">${st}</span>${right}</div>${marks}</div>`;

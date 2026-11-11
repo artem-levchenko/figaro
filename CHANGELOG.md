@@ -29,7 +29,7 @@ file; the release notes say when it has to be imported again.
   and they can still be sent to the agent; a note with several layers has **All on purpose** too, and marking
   the last layer is marking the note. The agent's `figaro notes` lists what you marked, layer by layer, so
   it leaves those alone. The Reviewer's row says how many layers are marked (each layer once, however many
-  rules mark it), with a **Clear** that raises them again after it asks "Clear marks on N layers? Yes / No" in
+  rules mark it), with a **Clear** that raises them again after it asks "Clear marks on N layers? No / Yes" in
   the row. A window shows On purpose only with a bridge that has it.
 
 ### Changed

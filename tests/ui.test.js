@@ -1666,7 +1666,7 @@ const RELEASE = "https://github.com/artem-levchenko/figaro/releases/tag/v1.2.0";
     env.click("rv-unmark", "here");
     await env.clock.advance(50);
     check("…Clear asks first, inline, with the same count, and sends nothing yet",
-          [/Clear marks on 2 layers\?<span class="ask"><button type="button" class="yn" data-act="rv-unmark-yes">Yes<\/button><button type="button" class="yn" data-act="rv-unmark-no">No<\/button>/.test(env.app()), env.sent("review-unmark").length], [true, 0]);
+          [/Clear marks on 2 layers\?<span class="ask"><button type="button" class="yn" data-act="rv-unmark-no">No<\/button><button type="button" class="yn" data-act="rv-unmark-yes">Yes<\/button>/.test(env.app()), env.sent("review-unmark").length], [true, 0]);
     env.click("rv-unmark-no", "here");
     await env.clock.advance(50);
     check("…No puts the row back", [/2 layers marked on purpose/.test(env.app()), /rv-unmark-yes/.test(env.app()), env.sent("review-unmark").length], [true, false, 0]);
