@@ -385,6 +385,12 @@ const ids = (notes) => notes.map((n) => n.id);
     const cover = RECT("#FFFFFF", { width: 300, height: 200, fills: image });
     check("content-clipped: quiet for a card's small radius on its cover image",
           (await only("content-clipped", clip([cover], { width: 300, height: 200, cornerRadius: 12 }))).length, 0);
+    // a rounded square, as an app icon's tile is, only softens its picture's corners; close to round, it cuts
+    const tile = (radius) => ring(RECT("#FFFFFF", { name: "Logo", width: 48, height: 48, fills: image }),
+                                  { name: "Logo tile", width: 48, height: 48, cornerRadius: radius });
+    check("content-clipped: quiet for a logo in a rounded square up to 40% of its side, a note from there",
+          [(await only("content-clipped", tile(12))).length, (await only("content-clipped", tile(19))).length,
+           (await only("content-clipped", tile(20))).length, (await only("content-clipped", tile(24))).length], [0, 0, 1, 1]);
     // a frame above the audited layer clips it too: the Reviewer audits a changed layer on its own
     const lone = VEC("#111111", { x: 90, y: 10, width: 20, height: 20 });
     clip([F([lone], { name: "Row", fills: [], width: 100, height: 100 })]);

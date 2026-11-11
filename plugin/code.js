@@ -9,7 +9,7 @@ figma.showUI(__html__, { width: UI_WIDTH, height: 70, title: "Figaro Relay", the
 // disk and asks for a re-Run when they differ, because a running plugin keeps
 // the code it started with. Bump it on every change to plugin/ —
 // tests/test_plugin_version.py fails until you do.
-const PLUGIN_VERSION = "2026-11-11.4";
+const PLUGIN_VERSION = "2026-11-11.5";
 
 // What this build can do beyond a plain exec, so the bridge knows which
 // requests it may send (an older build gets `figaro reload` first).
@@ -2806,6 +2806,10 @@ const AUDIT_CONTROL = new Set(Array.from(AUDIT_BUTTON).concat(["nav", "menu", "a
 const AUDIT_TYPE_VARS = ["fontSize", "fontFamily", "fontStyle", "fontWeight", "lineHeight", "letterSpacing"];
 const AUDIT_HEADING_STYLE = /(?:^|[\s/_-])(?:h|heading\s?)([1-6])(?:$|[\s/_-])/i;
 const AUDIT_CUT = 0.5;      // px a frame may cut off a layer before it is a note: an edge's anti-aliasing, not a cut
+// How round a frame's corners must be, as a share of its short side, before cutting a square layer that fills it
+// is a note: close to a circle or a pill, which turns a square logo into a circle. A rounded square, as an app
+// icon's tile is, only softens its picture's corners.
+const AUDIT_ROUND = 0.4;
 const AUDIT_SIDES = ["on the left", "at the top", "on the right", "at the bottom"];
 // Words that say a layer is cut to its frame's shape on purpose: a round avatar, a flag in a circle.
 const AUDIT_CROPPED = new Set(["avatar", "photo", "userpic", "picture", "portrait", "profile", "flag", "cover"]);
@@ -3308,7 +3312,7 @@ async function auditRun(root, opts, env) {
       // A square in a round frame: the frame's corners cut a layer that fills it, unless the layer is as round.
       const r = c.radius || [0, 0, 0, 0];
       const big = Math.max.apply(null, r);
-      if (big >= 2 && big >= Math.min(o.width, o.height) / 4 && n.type !== "ELLIPSE" && !AUDIT_ICON.has(n.type) && past.every((v) => v >= -1)) {
+      if (big >= 2 && big >= Math.min(o.width, o.height) * AUDIT_ROUND && n.type !== "ELLIPSE" && !AUDIT_ICON.has(n.type) && past.every((v) => v >= -1)) {
         const own = auditRadii(n);
         const cropped = auditWords(c.name).concat(auditWords(n.name)).some((w) => AUDIT_CROPPED.has(w));
         if (!cropped && r.some((v, i) => v >= 2 && own[i] < v - AUDIT_CUT)) {
