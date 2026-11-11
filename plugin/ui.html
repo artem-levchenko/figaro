@@ -276,6 +276,9 @@ html.rainbow .px i:nth-child(9) { --c: hsl(275 75% 62%); animation-delay: 0ms; }
 .rvm { display: flex; align-items: center; }
 .rvm .showall { margin-left: auto; padding: 0 4px; border: 0; background: none; color: var(--is-dim); font: 500 11px/15px var(--sys); cursor: pointer; }
 .rvm .showall:hover { color: var(--is-text); }
+.rvm .yn { margin-left: 4px; padding: 0 4px; border: 0; background: none; color: var(--is-dim); font: 500 11px/15px var(--sys); cursor: pointer; }
+.rvm .yn:hover { color: var(--is-text); }
+.rvm .ask { margin-left: auto; }
 #rvtip { position: fixed; z-index: 9; max-width: 232px; padding: 6px 9px; border-radius: 5px; background: #1e1e1e; color: #fff; font: 500 11px/15px var(--sys);
   box-shadow: 0 2px 10px rgba(0, 0, 0, .3); pointer-events: none; opacity: 0; transition: opacity .12s; }
 #rvtip.on { opacity: 1; transition-delay: .3s; }
@@ -334,7 +337,7 @@ button.layer:hover { background: color-mix(in srgb, var(--run) var(--is-tint), t
   transition: background-color .12s, color .12s; -webkit-user-select: none; user-select: none; touch-action: none; }
 .tl:hover { background: var(--is-fill); color: var(--win-dim); }
 .tl.on { color: var(--is-text); }  /* no fill: the next button stays 14 px from it */
-.tl:focus-visible, .sw:focus-visible, .lnk:focus-visible, .go2:focus-visible, .row .chk-up:focus-visible, .rql .op:focus-visible, .rvm .showall:focus-visible { outline: 2px solid var(--run); outline-offset: -2px; }
+.tl:focus-visible, .sw:focus-visible, .lnk:focus-visible, .go2:focus-visible, .row .chk-up:focus-visible, .rql .op:focus-visible, .rvm .showall:focus-visible, .rvm .yn:focus-visible { outline: 2px solid var(--run); outline-offset: -2px; }
 .tl svg { width: 12px; height: 12px; }
 .tl .bdg svg { width: 11px; height: 11px; }
 /* What there is to do about the version: the new one's number with ⤓ in a
@@ -955,6 +958,7 @@ function rvOf(f) {
 }
 // The notes the designer has not ticked, per file; a new set of notes comes all ticked.
 // A note marked on purpose leaves the set, and the ticks of the others stay.
+let clearing = null;           // the doc whose Clear waits for Yes or No
 const unticked = new Map();    // doc -> {at, ids, set}
 function rvUnticked(f, r) {
   const ids = r.notes.map((n) => n.id);
@@ -1229,8 +1233,12 @@ function reviewerRow(f, r) {
     if (hot === f.id + "\nreviewer") cls += " hot";
   }
   // the notes marked on purpose in this file, and a way to have them raised again
-  const marks = r.state !== "off" && !checking && r.state !== "notes" && r.intentional
-    ? `<p class="msg rvm">${plural(r.intentional, "layer", "layers")} marked on purpose<button type="button" class="showall" data-act="rv-unmark" title="The reviewer raises their notes again">Clear</button></p>` : "";
+  const shownMarks = r.state !== "off" && !checking && r.state !== "notes" && r.intentional;
+  if (!shownMarks && clearing === f.doc) clearing = null;  // leaving the row puts it back
+  const marks = !shownMarks ? ""
+    : clearing === f.doc
+      ? `<p class="msg rvm">Clear marks on ${plural(r.intentional, "layer", "layers")}?<span class="ask"><button type="button" class="yn" data-act="rv-unmark-yes">Yes</button><button type="button" class="yn" data-act="rv-unmark-no">No</button></span></p>`
+      : `<p class="msg rvm">${plural(r.intentional, "layer", "layers")} marked on purpose<button type="button" class="showall" data-act="rv-unmark" title="The reviewer raises their notes again">Clear</button></p>`;
   return `<div class="${cls}"${data}><div class="ah">${avatar}<span class="nm rvn"><span>reviewer</span><span class="qm" data-hint="1">${QM}</span></span>`
     + `<span class="st">${st}</span>${right}</div>${marks}</div>`;
 }
@@ -2083,7 +2091,16 @@ function act(name, fid, el) {
     cue("layer");
     send({ type: "review-intentional", doc: f.doc, note: String(el.dataset.id), at: rvOf(f).stamp });
   } else if (name === "rv-unmark" && f && f.doc && rvOf(f)) {
+    cue("layer");
+    clearing = f.doc;
+    render();
+  } else if (name === "rv-unmark-no" && f && f.doc) {
     cue("back");
+    clearing = null;
+    render();
+  } else if (name === "rv-unmark-yes" && f && f.doc && rvOf(f)) {
+    cue("back");
+    clearing = null;
     send({ type: "review-unmark", doc: f.doc });
   } else if (name === "rv-copy" && f && f.doc && rvOf(f)) {
     cue("go");

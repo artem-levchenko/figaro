@@ -25,7 +25,7 @@ file; the release notes say when it has to be imported again.
   check. Now each note in the window has **On purpose**: the note leaves, and the Reviewer won't raise its rule
   on those layers again in that file, after a restart too. The agent's `figaro notes` lists what you marked, so
   it leaves those alone. The Reviewer's row says how many layers are marked (each layer once, however many rules mark it), with a
-  **Clear** that raises them again. A window shows On purpose only with a bridge that has it.
+  **Clear** that raises them again after it asks "Clear marks on N layers? Yes / No" in the row. A window shows On purpose only with a bridge that has it.
 
 ### Changed
 
