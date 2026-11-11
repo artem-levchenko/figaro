@@ -410,6 +410,24 @@ def test_a_note_marked_on_purpose_leaves_and_is_not_raised_again_in_the_file():
     run(go())
 
 
+def test_the_marked_layers_are_counted_once_however_many_rules_they_are_marked_for():
+    async def go():
+        c = await make_client()
+        async with plugin(c) as p:
+            await turn_on(p)
+            await write(c)
+            await done(c)
+            assert await until(lambda: row(p)["state"] == "notes")
+            await mark(p, "n1")
+            await mark(p, "n2")
+            assert await until(lambda: row(p)["state"] == "sent")
+            # 5:7 carries two rules, 3 marks in all: 2 layers
+            assert sum(len(v) for v in bridge_review.MARKED["KEY1"].values()) == 3
+            assert row(p)["intentional"] == 2
+        await c.close()
+    run(go())
+
+
 def test_marking_every_note_on_purpose_answers_all_fine():
     async def go():
         c = await make_client()
@@ -425,7 +443,8 @@ def test_marking_every_note_on_purpose_answers_all_fine():
             assert await until(lambda: len(row(p)["notes"]) == 1)
             await mark(p, "n1")
             assert await until(lambda: row(p)["state"] == "sent")
-            assert (row(p)["sent"], row(p)["left"], row(p)["intentional"]) == (0, 0, 3)
+            # 5:7 is marked for two rules: the file's marked layers are counted once
+            assert (row(p)["sent"], row(p)["left"], row(p)["intentional"]) == (0, 0, 2)
             got = await notes(c)
             assert got["state"] == "fine" and [m["rule"] for m in got["marked"]] == ["unbound-color", "missing-font"]
         await c.close()

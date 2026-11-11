@@ -193,7 +193,7 @@ Then read `run.jsonl` (commands, errors, the final report) and clean up what it 
   check gave, up to 30 per line of `h.audit`) in `reviewer-intentional.json` next to the token, by file key; the
   check then leaves them out (`_unmarked`), and the note leaves the ones waiting (none left: the answer is all
   fine). The agent's answer lists the round's marks (`marked`). The board's `reviewer.intentional` counts the
-  file's marked layers, and the row's Clear (`review-unmark`) forgets them. A window shows On purpose only when
+  file's marked layers, each once however many rules mark it, and the row's Clear (`review-unmark`) forgets them. A window shows On purpose only when
   the board has `intentional`, so an older bridge shows none; an older window ignores the key.
 - `bridge_idle.py` — the bridge exits after `--idle-exit` with no plugins and no requests; on any exit it
   closes the plugins' connections at once.

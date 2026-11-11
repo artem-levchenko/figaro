@@ -20,7 +20,7 @@ A note the designer marks as on purpose (`review-intentional` {doc, note, at}) l
 notes, and its rule is not raised again on its layers in that file: the marks are kept per
 file key in `reviewer-intentional.json` ({"<fileKey>": {"<rule>": [layer ids]}}), and
 `review-unmark` {doc} clears the file's. The board's `intentional` counts the file's marked
-layers; the agent's answer lists the notes marked in its round (`marked`).
+layers, once each however many rules mark one; the agent's answer lists the notes marked in its round (`marked`).
 """
 
 from __future__ import annotations
@@ -216,7 +216,7 @@ def board_part(doc, info):
     on = ON.get(_key(doc, info), False)
     out = {"on": on, "state": "off", "agent": None, "layers": 0, "since": None, "at": None,
            "notes": [], "expired": False, "sent": 0, "left": 0,
-           "intentional": sum(len(ids) for ids in MARKED.get(_key(doc, info), {}).values())}
+           "intentional": len({i for ids in MARKED.get(_key(doc, info), {}).values() for i in ids})}
     if not on:
         return out
     row = STATE.get(doc)
