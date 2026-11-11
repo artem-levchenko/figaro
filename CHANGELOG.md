@@ -15,14 +15,16 @@ file; the release notes say when it has to be imported again.
   text cut by its frame was a note. Now a drawing, an icon, an instance, an image or a stroke that a frame with
   *Clip content* cuts is one too: an icon half out of its card, a button's outside stroke cut by the frame it
   sits flush in, a square logo that a round 20 × 20 frame turns into a circle. What is made to be cut stays
-  quiet: a photo cropped past both edges, a big backdrop shape, a fade or a glow, a mask, a frame that scrolls, a
-  logo in a rounded square, as an app icon's tile is, and an avatar or a photo in a round frame (by its name). It
-  comes right after `text-clipped`, the second loudest rule. It judges what shows, not the box, where Figma gives
-  it (`absoluteRenderBounds`, as `text-clipped` does): an icon component with built-in padding, whose box sticks
-  out of the frame while its glyph stops short of the edge, is quiet (what a frame or an instance with no fill,
-  stroke or effect of its own shows is what its children draw). So is a full-width pen line with a centred
-  stroke: a flat line's stroke stops at its ends, unless its caps are round or square. A layer with a drop shadow
-  or a blur is judged by its box, as before, because the render bounds count the effect.
+  quiet: a photo cropped past both edges, a big backdrop shape, a fade or a glow, a mask (an SVG's clip path,
+  which Figma imports as a group after a mask, too), a frame that scrolls, a logo in a rounded square, as an app
+  icon's tile is, a round logo or an icon's glyph drawn inside an instance in a round frame, and an avatar or a
+  photo in a round frame (by its name). It comes right after `text-clipped`, the second loudest rule. It judges
+  what shows, not the box, where Figma gives it (`absoluteRenderBounds`, as `text-clipped` does): an icon
+  component with built-in padding, whose box sticks out of the frame while its glyph stops short of the edge, is
+  quiet (what a frame or an instance with no fill, stroke or effect of its own shows is what its children draw).
+  So is a full-width pen line with a centred stroke: a flat line's stroke stops at its ends, unless its caps are
+  round or square. When a glyph is cut, the note says how far the glyph runs past the edge, not its box. A layer
+  with a drop shadow or a blur is judged by its box, as before, because the render bounds count the effect.
 - **A note of the Reviewer can be marked On purpose.** Until now a note you didn't send came back on the next
   check. Now each layer line of a note in the window has **On purpose**: that layer leaves the note, and the
   Reviewer won't raise the rule on it again in that file, after a restart too. The note keeps its other layers,

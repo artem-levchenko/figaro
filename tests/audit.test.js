@@ -310,6 +310,22 @@ const ids = (notes) => notes.map((n) => n.id);
     const masked = VEC("#111111", { x: 90, y: 80 });
     check("content-clipped: a crop, a backdrop, a fade, a glow, a mask and what it masks are quiet",
           (await only("content-clipped", clip([cropped, blob, fade, glow, mask, masked]))).length, 0);
+    // a mask a level up: Figma imports an SVG's clip path as a group, a mask, then a group of paths
+    const svgPath = VEC("#111111", { x: 90, y: 10, width: 20, height: 20 });
+    const svg = N("GROUP", { name: "Clip path group", x: 60, y: 0, width: 50, height: 40 },
+                  [RECT("#000000", { name: "clip0", x: 60, y: 0, width: 40, height: 40, isMask: true }), N("GROUP", { name: "Group", x: 90, y: 10, width: 20, height: 20 }, [svgPath])]);
+    check("content-clipped: quiet for a path in a group after a mask, an SVG's clip path",
+          (await only("content-clipped", clip([svg]))).length, 0);
+    const underMask = VEC("#111111", { x: 90, y: 10, width: 20, height: 20 });
+    const maskedCard = N("GROUP", { name: "Masked", width: 100, height: 100 }, [RECT("#000000", { width: 100, height: 100, isMask: true }), clip([underMask])]);
+    check("content-clipped: a mask above the frame that clips doesn't excuse the frame's cut",
+          ids(await only("content-clipped", maskedCard)), [underMask.id]);
+    // the render bounds cost: a layer away from every edge has them read not once
+    let reads = 0;
+    const calm = VEC("#111111", { x: 40, y: 40 });
+    Object.defineProperty(calm, "absoluteRenderBounds", { get() { reads++; return { x: 40, y: 40, width: 16, height: 16 }; } });
+    await only("content-clipped", clip([calm]));
+    check("content-clipped: a layer away from the frame's edges has its render bounds left unread", reads, 0);
     // a stroke: an outside one, and a centred one wider than the tolerance, on a layer flush with the frame
     const stroked = (align, weight) => F([], { name: "Button", width: 100, height: 100, fills: [], strokes: [solid("#2E6BFF")], strokeWeight: weight, strokeAlign: align });
     const outside = stroked("OUTSIDE", 1), centre = stroked("CENTER", 2), thin = stroked("CENTER", 1), inner = stroked("INSIDE", 4);
@@ -341,8 +357,10 @@ const ids = (notes) => notes.map((n) => n.id);
     check("content-clipped: an icon that paints its own box is cut, the box shows",
           ids(await only("content-clipped", clip([filled]))).includes(filled.id), true);
     const halfOut = icon24(90, [glyph(92, 20)]);
-    check("content-clipped: an icon whose drawn part reaches the frame's edge is still cut",
-          ids(await only("content-clipped", clip([halfOut]))), [halfOut.id]);
+    const halfCut = await only("content-clipped", clip([halfOut]));
+    check("content-clipped: an icon whose drawn part reaches the frame's edge is still cut", ids(halfCut), [halfOut.id]);
+    check("content-clipped: the note says how much of its glyph is cut, not of its padded box",
+          /12 px of it is cut off on the right/.test(halfCut[0].text), true);
     const pen = (props) => rbOf(VEC("#2E6BFF", Object.assign({ x: 0, y: 50, width: 100, height: 0, fills: [], strokes: [solid("#2E6BFF")], strokeWeight: 2, strokeAlign: "CENTER" }, props)),
                                 { x: 0, y: 49, width: 100, height: 2 });
     check("content-clipped: a full-width pen line with a centred 2 px stroke is quiet, its stroke stops at its ends",
@@ -368,7 +386,7 @@ const ids = (notes) => notes.map((n) => n.id);
     check("content-clipped: a square logo cut into a circle by its frame", ids(c1), [logo.id]);
     check("content-clipped: the corners' note", c1[0].text,
           'is cut by the rounded corners (radius 10) of the frame "Logo wrap", which clips its content; fine for an avatar or a photo, otherwise round the layer itself or turn the clipping off');
-    const logoInst = N("INSTANCE", { name: "Visa", width: 20, height: 20 });
+    const logoInst = N("INSTANCE", { name: "Visa", width: 20, height: 20 }, [RECT("#1A1F71", { name: "Tile", width: 20, height: 20 })]);
     logoInst.findAllWithCriteria = () => [];
     check("content-clipped: an instance of a logo too", ids(await only("content-clipped", ring(logoInst))), [logoInst.id]);
     const roundLogo = RECT("#FFFFFF", { width: 20, height: 20, fills: image, cornerRadius: 10 });
@@ -388,6 +406,19 @@ const ids = (notes) => notes.map((n) => n.id);
     // a rounded square, as an app icon's tile is, only softens its picture's corners; close to round, it cuts
     const tile = (radius) => ring(RECT("#FFFFFF", { name: "Logo", width: 48, height: 48, fills: image }),
                                   { name: "Logo tile", width: 48, height: 48, cornerRadius: radius });
+    // what shows in the corners decides: a glyph inside an icon, a circle drawn inside a logo's instance
+    const kit = (kids) => {
+      const n = N("INSTANCE", { name: "Logo", width: 32, height: 32 }, kids);
+      n.findAllWithCriteria = () => [];
+      return n;
+    };
+    const pill = (kid) => ring(kid, { name: "Icon button", width: 32, height: 32, cornerRadius: 16 });
+    const roundMark = kit([N("ELLIPSE", { width: 32, height: 32, fills: [solid("#2E6BFF")] }), VEC("#FFFFFF", { x: 8, y: 8 })]);
+    const glyphOnly = kit([RECT("#FFFFFF", { name: "Bounds", width: 32, height: 32, fills: [] }), VEC("#111111", { x: 6, y: 6, width: 20, height: 20 })]);
+    const squareMark = kit([RECT("#1A1F71", { width: 32, height: 32 }), VEC("#FFFFFF", { x: 8, y: 8 })]);
+    check("content-clipped: quiet for a round logo or an icon's glyph inside an instance, a note for a square tile in it",
+          [(await only("content-clipped", pill(roundMark))).length, (await only("content-clipped", pill(glyphOnly))).length,
+           ids(await only("content-clipped", pill(squareMark)))], [0, 0, [squareMark.id]]);
     check("content-clipped: quiet for a logo in a rounded square up to 40% of its side, a note from there",
           [(await only("content-clipped", tile(12))).length, (await only("content-clipped", tile(19))).length,
            (await only("content-clipped", tile(20))).length, (await only("content-clipped", tile(24))).length], [0, 0, 1, 1]);

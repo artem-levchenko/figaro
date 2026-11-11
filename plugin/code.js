@@ -9,7 +9,7 @@ figma.showUI(__html__, { width: UI_WIDTH, height: 70, title: "Figaro Relay", the
 // disk and asks for a re-Run when they differ, because a running plugin keeps
 // the code it started with. Bump it on every change to plugin/ —
 // tests/test_plugin_version.py fails until you do.
-const PLUGIN_VERSION = "2026-11-11.5";
+const PLUGIN_VERSION = "2026-11-11.6";
 
 // What this build can do beyond a plain exec, so the bridge knows which
 // requests it may send (an older build gets `figaro reload` first).
@@ -2968,10 +2968,11 @@ function auditShownBox(n) {
 // A frame's or an instance's render bounds cover its whole box, even when it paints nothing itself: an
 // icon component with padding "shows" up to its box's edge while its glyph stops short of it. So what
 // shows of a layer that has no fill, stroke or effect of its own is what its children draw. Bounded in
-// depth and in children: past that, the layer's own render bounds stand.
+// depth and in children: past that, the layer's own render bounds stand. With key "absoluteBoundingBox", the
+// same from the boxes, which no frame cuts: how far what it draws runs past a frame's edge.
 const AUDIT_DRAWN_DEPTH = 4, AUDIT_DRAWN_KIDS = 60;
-function auditDrawnBox(n, depth) {
-  const rb = n.absoluteRenderBounds;
+function auditDrawnBox(n, depth, key) {
+  const rb = n[key || "absoluteRenderBounds"];
   if (!rb || typeof rb.x !== "number" || typeof rb.width !== "number") return null;
   const kids = n.children;
   const bare = Array.isArray(kids) && kids.length > 0 && kids.length <= AUDIT_DRAWN_KIDS && depth < AUDIT_DRAWN_DEPTH &&
@@ -2981,7 +2982,7 @@ function auditDrawnBox(n, depth) {
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
   for (const k of kids) {
     if (k.visible === false) continue;
-    const r = auditDrawnBox(k, depth + 1);
+    const r = auditDrawnBox(k, depth + 1, key);
     if (!r) continue;
     x0 = Math.min(x0, r.x); y0 = Math.min(y0, r.y); x1 = Math.max(x1, r.x + r.width); y1 = Math.max(y1, r.y + r.height);
   }
@@ -2996,6 +2997,46 @@ function auditStrokeSides(n, b) {
   return [along, across, along, across];
 }
 
+// Does a layer reach into a frame's rounded corner, past the corner's arc? o: the frame's box, r: its radii
+// (top-left, then clockwise). A layer's corner is judged with its own radius, an ellipse's with half its short
+// side. A group, or a frame or an instance that paints nothing itself, is judged by what it holds: a round logo
+// drawn as a circle in an instance, or an icon's glyph, stays clear of the corners. A drawing (a vector) and a
+// text are not judged, as no box says where their shape runs, and a layer that paints nothing is never cut.
+const AUDIT_ARC = 1 - Math.SQRT1_2;  // where a corner's arc crosses its diagonal, as a share of its radius
+function auditCornerCut(n, o, r, depth) {
+  const t = n.type;
+  if (n.visible === false || n.isMask || t === "TEXT" || t === "LINE" || AUDIT_ICON.has(t)) return false;
+  const b = n.absoluteBoundingBox;
+  if (!b) return false;
+  const paints = !Array.isArray(n.fills) || auditShown(n.fills).length > 0 || auditStroked(n);
+  const kids = n.children;
+  if (Array.isArray(kids) && kids.length > 0 && kids.length <= AUDIT_DRAWN_KIDS && depth < AUDIT_DRAWN_DEPTH &&
+      (t === "GROUP" || !paints)) {
+    return kids.some((k) => auditCornerCut(k, o, r, depth + 1));
+  }
+  if (!paints) return false;
+  const own = t === "ELLIPSE" ? [0, 0, 0, 0].map(() => Math.min(b.width, b.height) / 2) : auditRadii(n);
+  const sx = [1, -1, -1, 1], sy = [1, 1, -1, -1];  // inward from each corner
+  for (let i = 0; i < 4; i++) {
+    if (r[i] < 2) continue;
+    const cx = (sx[i] > 0 ? o.x : o.x + o.width) + sx[i] * r[i];   // the centre of the frame's corner arc
+    const cy = (sy[i] > 0 ? o.y : o.y + o.height) + sy[i] * r[i];
+    const px = (sx[i] > 0 ? b.x : b.x + b.width) + sx[i] * own[i] * AUDIT_ARC;  // the layer's corner, on its own arc
+    const py = (sy[i] > 0 ? b.y : b.y + b.height) + sy[i] * own[i] * AUDIT_ARC;
+    if ((px - cx) * sx[i] < 0 && (py - cy) * sy[i] < 0 && Math.hypot(px - cx, py - cy) > r[i] + AUDIT_CUT) return true;
+  }
+  return false;
+}
+
+// How far what a layer draws runs past a frame's edge (side: left, top, right, bottom): a padded icon's
+// glyph, not its box. `box` stands when what is drawn says nothing more.
+function auditCutBy(n, o, side, box) {
+  const d = auditDrawnBox(n, 0, "absoluteBoundingBox");
+  if (!d) return box;
+  const v = [o.x - d.x, o.y - d.y, d.x + d.width - (o.x + o.width), d.y + d.height - (o.y + o.height)][side];
+  return v > AUDIT_CUT ? v : box;
+}
+
 // A glow or a fade, made to bleed: a layer blur, or gradients only and no stroke.
 function auditDecor(n) {
   if (Array.isArray(n.effects) && n.effects.some((x) => x && x.visible !== false && x.type === "LAYER_BLUR")) return true;
@@ -3007,7 +3048,7 @@ function auditDecor(n) {
 // One that scrolls in the prototype hides what is past its edge on purpose.
 function auditClipOf(n, up) {
   if ((n.type === "FRAME" || n.type === "COMPONENT" || n.type === "INSTANCE") && n.clipsContent === true && n.absoluteBoundingBox) {
-    return { box: n.absoluteBoundingBox, name: n.name, up, radius: auditRadii(n),
+    return { id: n.id, box: n.absoluteBoundingBox, name: n.name, up, radius: auditRadii(n),
              scroll: typeof n.overflowDirection === "string" && n.overflowDirection !== "NONE" };
   }
   return up;
@@ -3265,27 +3306,35 @@ async function auditRun(root, opts, env) {
     if (level !== null && bb) headings.push({ n, level, y: bb.y, x: bb.x, screen: e.screen });
   };
 
-  // A layer after a mask among its siblings is cut by the mask, on purpose.
-  const masked = (e) => {
-    const p = e.n.parent;
-    if (!p) return false;
-    const sibs = kids(p), at = indexOf(e);
-    for (let j = at - 1; j >= 0 && j >= at - 40; j--) if (sibs[j].isMask) return true;
+  // A layer after a mask among its siblings is cut by the mask, on purpose, and so is one inside a group
+  // that comes after a mask, as Figma imports an SVG's clip path. Only masks below the frame that clips
+  // (id) count: one above it doesn't excuse the frame's cut.
+  const masked = (e, id) => {
+    for (let c = e, d = 0; c && d < 12; c = parentOf(c), d++) {
+      const p = c.n.parent;
+      if (!p) return false;
+      const sibs = kids(p), at = indexOf(c);
+      for (let j = at - 1; j >= 0 && j >= at - 40; j--) if (sibs[j].isMask) return true;
+      if (p.id === id) return false;
+    }
     return false;
   };
   // Cut by a frame that clips: the layer sticks out of it, its stroke does, or the frame's rounded corners
   // cut a layer that fills it. The nearest frame that cuts it is named.
   const clipped = (e, n) => {
-    if (!e.clip || n.isMask || !auditCuttable(n) || auditDecor(n) || masked(e)) return;
+    if (!e.clip || n.isMask || !auditCuttable(n) || auditDecor(n)) return;
     const b = n.absoluteBoundingBox;
     if (!b) return;
     const out = auditOutset(n, mixed);
-    const rb = auditShownBox(n);
+    const grows = auditStrokeSides(n, b);
+    let rb;  // what shows (auditShownBox), read only for a layer that reaches a frame's edge: it costs
     for (let c = e.clip, depth = 0; c && depth < 20; c = c.up, depth++) {
       const o = c.box;
       if (c.scroll || o.width < 1 || o.height < 1) continue;
       if (b.x >= o.x + o.width || b.x + b.width <= o.x || b.y >= o.y + o.height || b.y + b.height <= o.y) return;  // all of it hidden: not a cut
       const past = [o.x - b.x, o.y - b.y, b.x + b.width - (o.x + o.width), b.y + b.height - (o.y + o.height)];  // left, top, right, bottom
+      const stroke = out > 0 && past.some((v, i) => grows[i] && v + out > AUDIT_CUT);
+      if (rb === undefined && (stroke || Math.max.apply(null, past) > AUDIT_CUT)) rb = auditShownBox(n);
       // Where what shows stops against each edge (0: at the edge, below: short of it). An icon's padded
       // box sticks out while its glyph stops short of the edge: nothing of it is cut.
       const shown = rb ? [o.x - rb.x, o.y - rb.y, rb.x + rb.width - (o.x + o.width), rb.y + rb.height - (o.y + o.height)] : null;
@@ -3296,26 +3345,26 @@ async function auditRun(root, opts, env) {
         // Past both edges of a side: a photo cropped by its frame, a bleed. A big shape is a backdrop.
         const crop = (past[0] > AUDIT_CUT && past[2] > AUDIT_CUT) || (past[1] > AUDIT_CUT && past[3] > AUDIT_CUT);
         const backdrop = AUDIT_SHAPES.has(n.type) && b.width >= o.width / 2 && b.height >= o.height / 2;
-        if (!crop && !backdrop) {
-          add("content-clipped", n, "sticks out of " + frame + ", so " + auditNum(worst) + " px of it is cut off " +
-            AUDIT_SIDES[seen.indexOf(worst)] + "; move it inside, or turn the clipping off");
+        if (!crop && !backdrop && !masked(e, c.id)) {
+          const side = seen.indexOf(worst);
+          add("content-clipped", n, "sticks out of " + frame + ", so " + auditNum(auditCutBy(n, o, side, worst)) + " px of it is cut off " +
+            AUDIT_SIDES[side] + "; move it inside, or turn the clipping off");
         }
         return;
       }
       // A stroke the frame cuts: with its stroke the box passes an edge the stroke grows toward, and what
       // shows reaches that edge. The render bounds can't say more: Figma has cut them at the edge too.
-      const grows = auditStrokeSides(n, b);
-      if (out > 0 && past.some((v, i) => grows[i] && v + out > AUDIT_CUT && (!shown || shown[i] >= -1))) {
-        add("content-clipped", n, "its stroke is cut off by " + frame + "; set the stroke inside, or make room for it");
+      if (stroke && past.some((v, i) => grows[i] && v + out > AUDIT_CUT && (!shown || shown[i] >= -1))) {
+        if (!masked(e, c.id)) add("content-clipped", n, "its stroke is cut off by " + frame + "; set the stroke inside, or make room for it");
         return;
       }
-      // A square in a round frame: the frame's corners cut a layer that fills it, unless the layer is as round.
+      // A square in a round frame: the frame's corners cut a layer that fills it, unless what it draws stays
+      // clear of them (auditCornerCut).
       const r = c.radius || [0, 0, 0, 0];
       const big = Math.max.apply(null, r);
-      if (big >= 2 && big >= Math.min(o.width, o.height) * AUDIT_ROUND && n.type !== "ELLIPSE" && !AUDIT_ICON.has(n.type) && past.every((v) => v >= -1)) {
-        const own = auditRadii(n);
+      if (big >= 2 && big >= Math.min(o.width, o.height) * AUDIT_ROUND && past.every((v) => v >= -1) && auditCornerCut(n, o, r, 0)) {
         const cropped = auditWords(c.name).concat(auditWords(n.name)).some((w) => AUDIT_CROPPED.has(w));
-        if (!cropped && r.some((v, i) => v >= 2 && own[i] < v - AUDIT_CUT)) {
+        if (!cropped && !masked(e, c.id)) {
           add("content-clipped", n, "is cut by the rounded corners (radius " + auditNum(big) + ") of " + frame +
             "; fine for an avatar or a photo, otherwise round the layer itself or turn the clipping off");
           return;
