@@ -258,9 +258,12 @@ Then read `run.jsonl` (commands, errors, the final report) and clean up what it 
   older window ignores the field. The Reviewer works alike: a window sees no row when `settings` has no
   `reviewer`. The Reviewer agent (`board.files[].reviewer`, the window's `reviewer` and `review-answer`) works
   alike: an older window ignores the key, so it shows no row and nobody turns the Reviewer on; a new window with
-  an older bridge gets no key and shows no row. `figaro done`'s `review` is optional. Sign agents' comments likewise: a window
-  shows the switch only when `settings` has `sign`. An ask's `what: "write"` makes a window say "wants to post
-  comments"; an older window says "read" all the same.
+  an older bridge gets no key and shows no row. `figaro done`'s `review` is optional. On purpose works alike: a
+  window shows it, and Clear, only when the board's `reviewer` has a number in `intentional`, so a new window
+  with an older bridge sends no `review-intentional` or `review-unmark`; an older window ignores the key, and
+  the marks it can't show still keep their layers off the notes. The answer's `marked` is optional too.
+  Sign agents' comments likewise: a window shows the switch only when `settings` has `sign`. An ask's
+  `what: "write"` makes a window say "wants to post comments"; an older window says "read" all the same.
 - **`plugin/ui.html` passes the exec fields to the sandbox by name.** A new field in
   `bridge_exec.exec_fields` must be added there too, or it never arrives; `tests/test_exec.py` catches it.
 - **The plugin never writes to the document.** The document id is `figma.fileKey`, which a development
