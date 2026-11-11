@@ -9,6 +9,8 @@ file; the release notes say when it has to be imported again.
 
 ## [Unreleased]
 
+## [1.11.0] — 2026-11-11
+
 ### Added
 
 - **The Reviewer sees content that a frame cuts off: a new `h.audit` rule, `content-clipped`.** Until now only a
