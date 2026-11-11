@@ -431,6 +431,9 @@ def test_one_layer_of_a_note_is_marked_on_purpose_and_the_rest_stay():
             await mark(p, "n2", layers=["9:9"])  # not a layer of the note: nothing happens
             await settle()
             assert [l["id"] for l in n2()["layers"]] == ["5:6", "5:7", "5:8"] and row(p)["intentional"] == 0
+            await mark(p, "n2", layers=[{}, ["5:7"], None])  # not ids: nothing happens, and the window stays
+            await settle()
+            assert [l["id"] for l in n2()["layers"]] == ["5:6", "5:7", "5:8"] and row(p)["intentional"] == 0
             await mark(p, "n2", layers=["5:7"])
             assert await until(lambda: [l["id"] for l in n2()["layers"]] == ["5:6", "5:8"])
             assert n2()["id"] == "n2" and n2()["more"] == 0

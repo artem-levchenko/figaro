@@ -683,7 +683,7 @@ def intentional(doc, note, at=None, layers=None):
     if layers is None:
         chosen = list(mine_all)
     elif isinstance(layers, list):
-        chosen = [i for i in dict.fromkeys(layers) if isinstance(i, str) and i in mine_all]
+        chosen = [i for i in dict.fromkeys(i for i in layers if isinstance(i, str)) if i in mine_all]
     else:
         chosen = []
     if not chosen:
