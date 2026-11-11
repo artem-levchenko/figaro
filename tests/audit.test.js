@@ -320,6 +320,28 @@ const ids = (notes) => notes.map((n) => n.id);
     check("content-clipped: a centred 2 px stroke is cut, a centred 1 px or an inside one is not",
           [ids(await only("content-clipped", clip([centre]))), (await only("content-clipped", clip([thin]))).length,
            (await only("content-clipped", clip([inner]))).length], [[centre.id], 0, 0]);
+    // what shows decides where Figma gives the render bounds (absoluteRenderBounds)
+    const rbOf = (n, box) => Object.assign(n, { absoluteRenderBounds: box });
+    const padded = rbOf(N("INSTANCE", { name: "Icon", x: 80, y: 10, width: 24, height: 24 }), { x: 82, y: 14, width: 16, height: 16 });
+    padded.findAllWithCriteria = () => [];
+    check("content-clipped: an icon whose padded box sticks out 4 px while its glyph is inside is quiet",
+          (await only("content-clipped", clip([padded]))).length, 0);
+    const halfOut = rbOf(N("INSTANCE", { name: "Icon", x: 90, y: 10, width: 24, height: 24 }), { x: 92, y: 14, width: 20, height: 16 });
+    halfOut.findAllWithCriteria = () => [];
+    check("content-clipped: an icon whose drawn part reaches the frame's edge is still cut",
+          ids(await only("content-clipped", clip([halfOut]))), [halfOut.id]);
+    const pen = (props) => rbOf(VEC("#2E6BFF", Object.assign({ x: 0, y: 50, width: 100, height: 0, fills: [], strokes: [solid("#2E6BFF")], strokeWeight: 2, strokeAlign: "CENTER" }, props)),
+                                { x: 0, y: 49, width: 100, height: 2 });
+    check("content-clipped: a full-width pen line with a centred 2 px stroke is quiet, its stroke stops at its ends",
+          (await only("content-clipped", clip([pen()]))).length, 0);
+    const flush = rbOf(stroked("OUTSIDE", 1), { x: -1, y: -1, width: 102, height: 102 });
+    check("content-clipped: with render bounds a button's outside stroke is still cut",
+          ids(await only("content-clipped", clip([flush]))), [flush.id]);
+    const shadowed = rbOf(F([], { name: "Chip", x: 70, y: 70, width: 20, height: 20, effects: [{ type: "DROP_SHADOW", visible: true, radius: 24, spread: 0, offset: { x: 0, y: 8 } }] }),
+                          { x: 46, y: 46, width: 68, height: 76 });
+    const shadowIcon = rbOf(VEC("#111111", { x: 10, y: 10, effects: [{ type: "DROP_SHADOW", visible: true, radius: 40, spread: 0, offset: { x: 0, y: 0 } }] }), { x: -30, y: -30, width: 96, height: 96 });
+    check("content-clipped: a shadow reaching past the frame is no note",
+          (await only("content-clipped", clip([shadowed, shadowIcon]))).length, 0);
     // rounded corners: a square logo in a 20 x 20 frame with radius 10 comes out a circle
     const ring = (kid, props) => clip([kid], Object.assign({ name: "Logo wrap", width: 20, height: 20, cornerRadius: 10 }, props));
     const logo = RECT("#FFFFFF", { name: "Logo", width: 20, height: 20, fills: image });

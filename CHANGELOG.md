@@ -17,7 +17,10 @@ file; the release notes say when it has to be imported again.
   sits flush in, a square logo that a round 20 × 20 frame turns into a circle. What is made to be cut stays
   quiet: a photo cropped past both edges, a big backdrop shape, a fade or a glow, a mask, a frame that scrolls,
   and an avatar or a photo in a round frame (by its name). It comes right after `text-clipped`, the second
-  loudest rule.
+  loudest rule. It judges what shows, not the box, where Figma gives it (`absoluteRenderBounds`, as
+  `text-clipped` does): an icon component with built-in padding, whose box sticks out of the frame while its
+  glyph is inside, and a full-width pen line whose centred stroke stops at its ends are quiet. A layer with a
+  drop shadow or a blur is judged by its box, as before, because the render bounds count the effect.
 - **A note of the Reviewer can be marked On purpose.** Until now a note you didn't send came back on the next
   check. Now each note in the window has **On purpose**: the note leaves, and the Reviewer won't raise its rule
   on those layers again in that file, after a restart too. The agent's `figaro notes` lists what you marked, so

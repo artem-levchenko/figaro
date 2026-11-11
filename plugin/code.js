@@ -9,7 +9,7 @@ figma.showUI(__html__, { width: UI_WIDTH, height: 70, title: "Figaro Relay", the
 // disk and asks for a re-Run when they differ, because a running plugin keeps
 // the code it started with. Bump it on every change to plugin/ —
 // tests/test_plugin_version.py fails until you do.
-const PLUGIN_VERSION = "2026-11-05.2";
+const PLUGIN_VERSION = "2026-11-05.3";
 
 // What this build can do beyond a plain exec, so the bridge knows which
 // requests it may send (an older build gets `figaro reload` first).
@@ -2949,6 +2949,16 @@ function auditCuttable(n) {
   return false;
 }
 
+// What of a layer shows, as Figma measures it (absoluteRenderBounds), or null to fall back to its box.
+// Render bounds include a shadow's or a blur's reach, which no frame cuts as content, so a layer with
+// one is not measured by them: it is judged by its box and stroke, as when Figma gives no bounds.
+function auditShownBox(n) {
+  const rb = n.absoluteRenderBounds;
+  if (!rb || typeof rb.x !== "number" || typeof rb.width !== "number") return null;
+  if (Array.isArray(n.effects) && n.effects.some((x) => x && x.visible !== false && (x.type === "DROP_SHADOW" || x.type === "LAYER_BLUR"))) return null;
+  return rb;
+}
+
 // A glow or a fade, made to bleed: a layer blur, or gradients only and no stroke.
 function auditDecor(n) {
   if (Array.isArray(n.effects) && n.effects.some((x) => x && x.visible !== false && x.type === "LAYER_BLUR")) return true;
@@ -3233,12 +3243,16 @@ async function auditRun(root, opts, env) {
     const b = n.absoluteBoundingBox;
     if (!b) return;
     const out = auditOutset(n, mixed);
+    const rb = auditShownBox(n);
     for (let c = e.clip, depth = 0; c && depth < 20; c = c.up, depth++) {
       const o = c.box;
       if (c.scroll || o.width < 1 || o.height < 1) continue;
       if (b.x >= o.x + o.width || b.x + b.width <= o.x || b.y >= o.y + o.height || b.y + b.height <= o.y) return;  // all of it hidden: not a cut
       const past = [o.x - b.x, o.y - b.y, b.x + b.width - (o.x + o.width), b.y + b.height - (o.y + o.height)];  // left, top, right, bottom
-      const worst = Math.max.apply(null, past);
+      // How far what shows reaches past the frame: an icon's padded box sticks out while its glyph is inside.
+      const shown = rb ? [o.x - rb.x, o.y - rb.y, rb.x + rb.width - (o.x + o.width), rb.y + rb.height - (o.y + o.height)] : null;
+      const seen = shown ? past.map((v, i) => (v > AUDIT_CUT && shown[i] < -1 ? 0 : v)) : past;
+      const worst = Math.max.apply(null, seen);
       const frame = 'the frame "' + auditShort(c.name, 30) + '", which clips its content';
       if (worst > AUDIT_CUT) {
         // Past both edges of a side: a photo cropped by its frame, a bleed. A big shape is a backdrop.
@@ -3246,11 +3260,14 @@ async function auditRun(root, opts, env) {
         const backdrop = AUDIT_SHAPES.has(n.type) && b.width >= o.width / 2 && b.height >= o.height / 2;
         if (!crop && !backdrop) {
           add("content-clipped", n, "sticks out of " + frame + ", so " + auditNum(worst) + " px of it is cut off " +
-            AUDIT_SIDES[past.indexOf(worst)] + "; move it inside, or turn the clipping off");
+            AUDIT_SIDES[seen.indexOf(worst)] + "; move it inside, or turn the clipping off");
         }
         return;
       }
-      if (out > 0 && worst + out > AUDIT_CUT) {
+      // A stroke that reaches past the edge: by what it covers where Figma says, else by its width. A line
+      // flush with the frame has a stroke that stops at its ends.
+      const reach = shown ? Math.max.apply(null, shown) : worst + out;
+      if (out > 0 && reach > AUDIT_CUT) {
         add("content-clipped", n, "its stroke is cut off by " + frame + "; set the stroke inside, or make room for it");
         return;
       }
