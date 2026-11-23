@@ -285,7 +285,7 @@ def test_an_empty_shot_says_why(tmp_path):
     lines = cli_extras.save_shots([shot(data=png(1, 1), hidden=True)], tmp_path)
     assert "⚠ the picture is empty: it is hidden" in lines[-1] and "visible = true" in lines[-1]
     lines = cli_extras.save_shots([shot(data=png(1, 1), hidden={"id": "1:1", "name": "Panel"})], tmp_path)
-    assert '"Panel" 1:1, a layer above it, is hidden' in lines[-1]
+    assert '"Panel" 1:1, a layer above it, is hidden' in lines[-1] and 'show "Panel" in a script' in lines[-1]
     lines = cli_extras.save_shots([shot(data=png(1, 1))], tmp_path)
     assert "⚠ the picture is 1×1: the layer has nothing Figma can draw" in lines[-1]
     lines = cli_extras.save_shots([shot(data=png(20, 10))], tmp_path)

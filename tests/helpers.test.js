@@ -40,7 +40,8 @@ const figma = {
 
 // code.js is written for the plugin sandbox: evaluate it with our stub in scope
 // and hand back the HELPERS object it builds.
-const h = new Function("figma", "__html__", src + "\nreturn HELPERS;")(figma, "");
+const { HELPERS: h, setPrint } = new Function("figma", "__html__", src +
+  "\nreturn { HELPERS, setPrint: (p) => { CURRENT_PRINT = p || (() => {}); } };")(figma, "");
 
 let failed = 0;
 function check(label, actual, expected) {
@@ -191,29 +192,42 @@ check("sel maps selection", h.sel(), [
   Date.now = now;
   check("annotations: stops when h.ck() says so", why, "stopped");
 
-  // h.bF and h.bS keep the paint's opacity (#11). Figma's setBoundVariableForPaint gives the paint
-  // the opacity of the variable's colour: 1 for an opaque one, so a fill at 10% came out at 100%.
+  // h.bF and h.bS say when binding changed the paint's opacity (#11). On the layer, a paint bound
+  // to a colour variable takes the colour's alpha: a fill at 10% bound to an opaque colour is at
+  // 100%. The stub's layer does that on assignment, as Figma does.
   const vars = {
     "VariableID:1:1": { id: "VariableID:1:1", name: "brand", a: 1 },
     "VariableID:1:2": { id: "VariableID:1:2", name: "scrim", a: 0.5 },
   };
   figma.variables.getVariableByIdAsync = async (id) => vars[id] || null;
   figma.variables.setBoundVariableForPaint = (paint, field, v) => Object.assign({}, paint,
-    { opacity: v.a, boundVariables: { [field]: { type: "VARIABLE_ALIAS", id: v.id } } });
+    { boundVariables: { [field]: { type: "VARIABLE_ALIAS", id: v.id } } });
+  const resolve = (paints) => paints.map((p) => p.boundVariables
+    ? Object.assign({}, p, { opacity: vars[p.boundVariables.color.id].a }) : p);
+  const layer = (name, fills, strokes) => {
+    const n = { name, _f: fills, _s: strokes || [] };
+    Object.defineProperty(n, "fills", { get() { return this._f; }, set(v) { this._f = resolve(v); } });
+    Object.defineProperty(n, "strokes", { get() { return this._s; }, set(v) { this._s = resolve(v); } });
+    return n;
+  };
   const solid = (opacity) => Object.assign({ type: "SOLID", color: { r: 0, g: 0, b: 0 } },
     opacity === undefined ? {} : { opacity });
-  const box = { name: "Box", fills: [solid(0.1), solid(1)], strokes: [solid(0.25)] };
-  await h.bF(box, 0, "VariableID:1:1");
-  await h.bF(box, 1, "VariableID:1:1");
-  await h.bS(box, 0, "VariableID:1:1");
-  check("bF/bS: a paint bound to an opaque colour keeps its opacity",
-    [box.fills[0].opacity, box.fills[1].opacity, box.strokes[0].opacity, box.fills[0].boundVariables.color.id],
-    [0.1, 1, 0.25, "VariableID:1:1"]);
-  const scrim = { name: "Scrim", fills: [solid(0.1), solid()] };
-  await h.bF(scrim, 0, "VariableID:1:2");
-  await h.bF(scrim, 1, "VariableID:1:2");
-  check("bF: a colour with an alpha of its own keeps what Figma gives",
-    scrim.fills.map((p) => p.opacity), [0.5, 0.5]);
+  const printed = [];
+  const run = (fn) => (async () => { setPrint((line) => printed.push(line)); try { await fn(); } finally { setPrint(null); } })();
+  const box = layer("Box", [solid(0.1), solid(1)], [solid(0.25)]);
+  await run(async () => {
+    await h.bF(box, 0, "VariableID:1:1");
+    await h.bF(box, 1, "VariableID:1:1");
+    await h.bS(box, 0, "VariableID:1:2");
+  });
+  check("bF/bS: the paint is bound, at the colour's alpha", [box.fills.map((p) => p.opacity), box.strokes[0].opacity,
+    box.fills[0].boundVariables.color.id], [[1, 1], 0.5, "VariableID:1:1"]);
+  check("…and a changed opacity is told, once per paint that changed", printed, [
+    "⚠ h.bF: the fill of \"Box\" was at 10%, now 100%: a fill bound to a colour variable takes the colour's alpha. " +
+      "For 10%, bind a variable whose colour has that alpha, or set the layer's opacity",
+    "⚠ h.bS: the stroke of \"Box\" was at 25%, now 50%: a stroke bound to a colour variable takes the colour's " +
+      "alpha. For 25%, bind a variable whose colour has that alpha, or set the layer's opacity",
+  ]);
   console.log(failed ? `\n${failed} FAILED` : "\nall helper checks passed");
   process.exit(failed ? 1 : 0);
 })();

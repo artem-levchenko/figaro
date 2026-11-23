@@ -18,7 +18,7 @@ Read the `hint:` in the answer first: the bridge knows most of the cases below.
 | `Figma isn't answering in "…"` (from `figaro wait`; the file is red in the plugin's window) | a script there runs on long past its time, or the plugin's window closed while one ran | tell the user in your first line: reload the file in Figma (close its tab and open it again, or quit Figma if the tab won't close), then run Figaro in it. Don't retry until `figaro wait` says it is ready |
 | `the loop on line N was still running when --timeout ran out — the script was stopped` | a `while` or `for (;;)` loop never ended: its condition stayed true | the file is free. What the script changed before stays: look at it, or `figaro undo`. Fix the condition, so that what it tests changes each time round |
 | `figma.…() did not answer before --timeout ran out — the script was stopped` | Figma never answered the call on the line it names | the file is free, but don't repeat that call. It happens with `figma.teamLibrary` and import by key — take what the file already has by id from `figaro inspect` |
-| `--timeout ran out while the script waited for figma.…()`, `of the 181 s it ran, its calls to Figma took …` | many calls that each answered used the time up; the line named is only the one that ran last | the file is free. Split the work into scripts of a few dozen calls each, or give a longer `--timeout`. An import by key takes seconds (41 components and 27 styles took 181 s): import each one once, and take what the file already has by id |
+| `--timeout ran out while the script waited for figma.…()` or `the loop on line N waited for Figma most of its time`, then `of the 181 s it ran, its calls to Figma took …` | many calls that each answered used the time up; the line named is only the one that ran last | the file is free. Split the work into scripts of a few dozen calls each, or give a longer `--timeout`. An import by key takes seconds (41 components and 27 styles took 181 s): import each one once, and take what the file already has by id |
 | `plugin disconnected mid-request` | the plugin restarted (Figma restarted it after a code change, or the user closed its window) | check what the script managed to do (`inspect`) and run it again; `undo` remembers nothing from before a restart |
 | `⚠ … runs an older build — figaro reload` | Figma runs old plugin code | `figaro reload -T <file>`; if that fails, ask the user to press Reload in the plugin's window or to restart the plugin |
 | `⚠ Figaro X is released (this is Y) — tell the user` | a new release is out, and the user hasn't skipped it in the window | tell the user once, in your report. Don't update Figaro yourself unless they ask: the window's Update waits until no agent's script runs |
@@ -111,8 +111,10 @@ order. If you write it by hand:
   them are frozen: copy the array (`JSON.parse(JSON.stringify(node.fills))`), change it and assign it whole.
   To bind — `h.bF`/`h.bS`.
 - **`setBoundVariableForPaint` returns a new paint** — it has to be assigned; `h.bF` does that itself.
-  Its opacity is reset: bound by hand to an opaque colour, a fill at 10% comes out at 100%. `h.bF` and `h.bS`
-  keep the paint's opacity; by hand, set `opacity` on the new paint again.
+  On the layer, a paint bound to a colour variable takes the colour's alpha as its opacity: a fill at 10%
+  bound to an opaque colour is at 100% (`h.bF` and `h.bS` print a `⚠` line when that happens). An opacity
+  set on the bound paint afterwards holds only until the variable's value changes. For a fill at 10%, bind a
+  variable whose colour has that alpha, or set the layer's `opacity`.
 - **Empty `fills`** — nothing to bind: first `node.fills = h.solid("#000")`, then `h.bF(node, 0, v)`.
 - **A fill's opacity** lives in `paint.opacity`, not in the variable's colour: don't lose it when you
   overwrite the fill.

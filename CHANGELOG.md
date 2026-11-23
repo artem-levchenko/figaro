@@ -17,8 +17,12 @@ file; the release notes say when it has to be imported again.
   and failed. Now a slot one level down counts as the script's own too, through a key that only ever holds
   its own objects and arrays. When a `-R` script is rolled back, the error quotes what made its code look like
   it writes (`` `acc.count++` ``, `` `n.resize()` ``), so an agent whose script only reads knows what to change.
-- **`h.bF` and `h.bS` keep the paint's opacity** (#11). Figma's `setBoundVariableForPaint` resets it, so a fill
-  at 10% bound to an opaque colour came out at 100%.
+- **`h.bF` and `h.bS` say when binding changed a paint's opacity** (#11). On the layer, a paint bound to a
+  colour variable takes the colour's alpha as its opacity, so a fill at 10% bound to an opaque colour came out
+  at 100%, and the report said only `fills`. Now the helper prints
+  `⚠ h.bF: the fill of "Box" was at 10%, now 100%` and what holds instead: a variable whose colour has that
+  alpha, or the layer's opacity. Setting the opacity back on the bound paint would last only until the
+  variable's value changed, when Figma takes the alpha again.
 - **A picture of a hidden layer says that it is empty** (#11). Figma exports a hidden layer, a layer inside a
   hidden one and a layer with nothing to draw as a 1×1 picture, and `figaro shot` and `exec --shot` saved it
   without a word. Now they warn, and name the hidden layer above when it is a parent that hides it. `h.shot`
@@ -33,7 +37,9 @@ file; the release notes say when it has to be imported again.
   never answered it. Now, when many calls that each answered used the time up, the error says
   "--timeout ran out while the script waited for figma.importComponentByKeyAsync()" and adds "of the 181 s it
   ran, its calls to Figma took 178 s: figma.importComponentByKeyAsync() ×41, 150 s; …", and the hint says to
-  split the work into several scripts. A call that never answered is told as before.
+  split the work into several scripts. A `for (let i …)` loop of such calls said it "was still running" and
+  that it never ended; now it says it "waited for Figma most of its time". A call that never answered, and a
+  loop that really never ends, are told as before.
 
 ## [1.11.0] — 2026-11-11
 

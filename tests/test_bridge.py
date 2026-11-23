@@ -639,6 +639,9 @@ def test_two_documents_sharing_a_name_stay_ambiguous():
      "was stopped", "A retry is unlikely to help"),
     ("aborted: --timeout ran out while the script waited for figma.importStyleByKeyAsync() — the script "
      "was stopped; of the 181 s it ran, its calls to Figma took 178 s", "Split the work into several"),
+    ("aborted: the loop on line 3 waited for Figma most of its time, and --timeout ran out — the script "
+     "was stopped", "Split the work into several"),
+    ("aborted: the loop on line 3 was still running when --timeout ran out", "this loop never ended"),
     ("something entirely unrecognised", None),
 ])
 def test_find_hint(error_text, expected):

@@ -826,6 +826,19 @@ function check(label, actual, expected) {
     check("many slow calls: the time ran out while the script waited, not a call that hung",
       [slow.type, /^aborted: --timeout ran out while the script waited for figma\.importStyleByKeyAsync\(\) — the script was stopped; of the 1\.\d s it ran, its calls to Figma took 1\.\d s: figma\.importStyleByKeyAsync\(\) ×8, 1\.\d s$/.test(slow.text), slow.line],
       ["error", true, 2]);
+    // A guarded loop that spent its time waiting for Figma was slow, not endless.
+    const slowLoop = await exec(env, "for (let i = 0; ; i++) {\n  await figma.importStyleByKeyAsync(\"k\");\n" +
+      "  if (i === 6) { const t = Date.now(); while (Date.now() - t < 400) {} }\n}", { timeout: 1.2 });
+    check("a loop that waited for Figma most of its time says so, not that it never ended",
+      [slowLoop.type, /^aborted: the loop on line 3 waited for Figma most of its time, and --timeout ran out — the script was stopped; of the 1\.\d s it ran, its calls to Figma took 1\.\d s: figma\.importStyleByKeyAsync\(\) ×7, 1\.\d s$/.test(slowLoop.text)],
+      ["error", true]);
+    // A for … of loop has no guard: the next call finds the time up.
+    const slowOf = await exec(env, "for (const k of [1, 2, 3, 4, 5, 6, 7, 8, 9]) {\n  await figma.importStyleByKeyAsync(\"k\");\n" +
+      "  if (k === 7) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 400);\n}",  // busy, no loop to guard
+      { timeout: 1.2 });
+    check("…and so does a for … of loop that finds the time up at its next call",
+      [slowOf.type, /^aborted: --timeout ran out while the script waited for Figma most of its time — the script was stopped; of the 1\.\d s it ran, its calls to Figma took 1\.\d s: figma\.importStyleByKeyAsync\(\) ×7, 1\.\d s$/.test(slowOf.text)],
+      ["error", true]);
     check("…and one call that hung still says so, with no time summary under a second",
       [/did not answer before --timeout ran out — the script was stopped$/.test(hung.text)], [true]);
     const refused = await exec(env, 'return await h.var_("gone");');

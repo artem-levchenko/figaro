@@ -215,16 +215,24 @@ function copyPaints(node, prop, who) {
   return JSON.parse(JSON.stringify(paints));
 }
 
-// The paint bound to a colour variable, at the opacity it had. Figma's
-// setBoundVariableForPaint resets the paint's opacity: a fill at 10% bound to an
-// opaque colour came out at 100% (#11). When Figma gives it an opacity other
-// than 1 (the alpha of a colour that has one), that stays.
-function boundPaint(paint, v) {
-  const bound = figma.variables.setBoundVariableForPaint(paint, "color", v);
-  const had = typeof paint.opacity === "number" ? paint.opacity : 1;
-  const got = bound && typeof bound.opacity === "number" ? bound.opacity : 1;
-  if (had === 1 || got !== 1 || !bound) return bound;
-  return Object.assign({}, bound, { opacity: had });
+// A paint bound to a colour variable takes the colour's alpha as its opacity
+// once it is on the layer: a fill at 10% bound to an opaque colour comes out at
+// 100% (#11). An opacity set on the bound paint afterwards holds only until the
+// variable's value changes, when Figma takes the alpha again (checked live), so
+// the helpers don't keep it: they say what changed and what holds instead.
+function opacityNote(who, node, prop, idx, had) {
+  const paint = Array.isArray(node[prop]) ? node[prop][idx] : null;
+  const now = paint && typeof paint.opacity === "number" ? paint.opacity : 1;
+  if (Math.abs(now - had) < 0.005) return;
+  const pct = (x) => Math.round(x * 100) + "%";
+  const what = prop === "fills" ? "fill" : "stroke";
+  CURRENT_PRINT("⚠ " + who + ": the " + what + " of \"" + node.name + "\" was at " + pct(had) + ", now " + pct(now) +
+    ": a " + what + " bound to a colour variable takes the colour's alpha. For " + pct(had) + ", bind a " +
+    "variable whose colour has that alpha, or set the layer's opacity");
+}
+
+function opacityOf(paint) {
+  return typeof paint.opacity === "number" ? paint.opacity : 1;
 }
 
 // A key Figma would not import is the usual dead end — library variables
@@ -244,8 +252,10 @@ const HELPERS = {
     if (!v) throw noVar("h.bF", varOrId);
     const f = copyPaints(node, "fills", "h.bF");
     if (!f[idx]) throw new Error("h.bF: '" + node.name + "' has no fill at index " + idx);
-    f[idx] = boundPaint(f[idx], v);
+    const had = opacityOf(f[idx]);
+    f[idx] = figma.variables.setBoundVariableForPaint(f[idx], "color", v);
     node.fills = f;
+    opacityNote("h.bF", node, "fills", idx, had);
     return v;
   },
 
@@ -255,8 +265,10 @@ const HELPERS = {
     if (!v) throw noVar("h.bS", varOrId);
     const s = copyPaints(node, "strokes", "h.bS");
     if (!s[idx]) throw new Error("h.bS: '" + node.name + "' has no stroke at index " + idx);
-    s[idx] = boundPaint(s[idx], v);
+    const had = opacityOf(s[idx]);
+    s[idx] = figma.variables.setBoundVariableForPaint(s[idx], "color", v);
     node.strokes = s;
+    opacityNote("h.bS", node, "strokes", idx, had);
     return v;
   },
 
@@ -483,7 +495,8 @@ function makeGate(id, deadline) {
         throw hung;
       })]);
     },
-    // "figma.importComponentByKeyAsync() ×41, 150 s; …", or null when Figma's calls took little of it.
+    // { text: "of the 181 s it ran, its calls to Figma took 178 s: figma.importComponentByKeyAsync() ×41,
+    // 150 s; …", mostly: whether they took half of it or more }, or null when they took under a second.
     spent() {
       const now = Date.now();
       const rows = Array.from(calls, ([name, t]) => ({
@@ -492,9 +505,10 @@ function makeGate(id, deadline) {
       const total = rows.reduce((s, r) => s + r.ms, 0);
       if (total < 1000) return null;
       const sec = (ms) => (ms < 10000 ? Math.round(ms / 100) / 10 : Math.round(ms / 1000)) + " s";
-      return "of the " + sec(now - started) + " it ran, its calls to Figma took " + sec(total) + ": " +
+      const text = "of the " + sec(now - started) + " it ran, its calls to Figma took " + sec(total) + ": " +
         rows.slice(0, 3).filter((r) => r.ms >= 100).map((r) => "figma." + r.name + "() ×" + r.n + ", " + sec(r.ms))
           .join("; ") + (rows.length > 3 ? "; …" : "");
+      return { text, mostly: total * 2 >= now - started };
     },
     close() { if (timer !== null) clearTimeout(timer); GATES.delete(id); },
   };
@@ -764,10 +778,19 @@ figma.ui.onmessage = async (msg) => {
     ok = true;
   } catch (e) {
     error = e;
-    // Stopped at --timeout: where the time went, as the line that ran last may not say it.
+    // Stopped at --timeout: where the time went, as the line that ran last may not say it. A loop
+    // that spent its time waiting for Figma would have ended: it was slow, not endless.
     const spent = /^aborted:/.test(errorText(e)) ? gate.spent() : null;
     if (spent) {
-      try { e.message = errorText(e) + "; " + spent; } catch (_) { /* a frozen error keeps its text */ }
+      let text = errorText(e);
+      if (spent.mostly) {
+        text = text.replace(/ was still running when --timeout ran out —/, " waited for Figma most of its time, and --timeout ran out —");
+        // the next call to Figma, or h.ck(), found the time up before the deadline's timer could fire
+        if (text === ABORTED_TEXT && Date.now() > deadline) {
+          text = "aborted: --timeout ran out while the script waited for Figma most of its time — the script was stopped";
+        }
+      }
+      try { e.message = text + "; " + spent.text; } catch (_) { /* a frozen error keeps its text */ }
     }
   } finally {
     CURRENT_PRINT = () => {};

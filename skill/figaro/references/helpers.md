@@ -11,8 +11,8 @@ A `figaro exec` script runs as the body of an async function with the parameters
   `figma.teamLibrary`, check it themselves: after the deadline a new call throws, and a call Figma never
   answered ends with the error "did not answer before --timeout ran out". So does an import by key in
   `h.importComp`, `h.importVar`, `h.var_`, `h.bF`, `h.bS` and `h.bN`. When many calls that each answered used
-  the time up, the error says "--timeout ran out while the script waited for figma.…()" and where the time
-  went: `of the 181 s it ran, its calls to Figma took 178 s: figma.importComponentByKeyAsync() ×41, 150 s`.
+  the time up, the error says "--timeout ran out while the script waited for figma.…()" (or "the loop on line N
+  waited for Figma most of its time") and where the time went: `of the 181 s it ran, its calls to Figma took 178 s: figma.importComponentByKeyAsync() ×41, 150 s`.
   A `while`, `do … while` or `for (;;)` loop ends at the deadline too: "the loop on line N was still running when --timeout ran out". Node methods
   (`getMainComponentAsync`, `exportAsync`, `setTextStyleIdAsync`…), the other helpers and `for … of` loops
   don't know the deadline — call `h.ck()` in a long `for … of` loop.
@@ -101,7 +101,7 @@ A component the file already has (its own or a library's; `inspect` prints its i
 |---|---|
 | `await h.var_(idOrKey)` | a variable by id (`VariableID:…`; also a library variable the file already uses — `inspect` prints its id) or by key (imports it) |
 | `await h.importVar(key)` | a variable of an enabled library, by key; Figma imports only published ones |
-| `await h.bF(node, i, v)` · `await h.bS(node, i, v)` | bind fill or stroke number `i` to a variable (an id, a key or the variable itself). The paint keeps its opacity: a fill at 10% stays at 10% |
+| `await h.bF(node, i, v)` · `await h.bS(node, i, v)` | bind fill or stroke number `i` to a variable (an id, a key or the variable itself). A paint bound to a colour takes the colour's alpha as its opacity: a fill at 10% bound to an opaque colour is at 100%, and the helper prints a `⚠` line when the opacity changed |
 | `await h.bN(node, prop, v)` | bind a number: `itemSpacing`, `counterAxisSpacing`, `paddingTop`…, `topLeftRadius`…, `width`, `height`, `minWidth`…, `strokeWeight`, `opacity` |
 
 A text's font to a variable: `text.setBoundVariable("fontSize", v)` — and the same for `fontFamily`,

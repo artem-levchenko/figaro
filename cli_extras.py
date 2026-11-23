@@ -589,10 +589,13 @@ def empty_shot(s, size):
     hidden one and a layer with nothing to draw as an empty 1×1 picture, and says nothing."""
     hidden = s.get("hidden")
     if hidden and size in (None, (1, 1)):
-        where = ("it is hidden" if hidden is True else
-                 f'"{hidden.get("name")}" {hidden.get("id")}, a layer above it, is hidden')
+        if hidden is True:
+            where, which = "it is hidden", "it"
+        else:
+            where = f'"{hidden.get("name")}" {hidden.get("id")}, a layer above it, is hidden'
+            which = f'"{hidden.get("name")}"'
         return (f"the picture is empty: {where}, and Figma draws nothing for a hidden layer. To see it, "
-                "show it in a script (visible = true), shoot, and hide it again")
+                f"show {which} in a script (visible = true), shoot, and hide it again")
     if size == (1, 1):
         return ("the picture is 1×1: the layer has nothing Figma can draw (no width or height, or "
                 "nothing visible in it)")
