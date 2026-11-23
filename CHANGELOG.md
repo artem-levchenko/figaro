@@ -9,6 +9,8 @@ file; the release notes say when it has to be imported again.
 
 ## [Unreleased]
 
+## [1.12.0] — 2026-11-24
+
 ### Added
 
 - **`figaro exec` shows a script's `print()` lines as it prints them** (#11). Until now they all came at the
