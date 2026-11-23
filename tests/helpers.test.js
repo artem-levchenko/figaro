@@ -224,9 +224,11 @@ check("sel maps selection", h.sel(), [
     box.fills[0].boundVariables.color.id], [[1, 1], 0.5, "VariableID:1:1"]);
   check("…and a changed opacity is told, once per paint that changed", printed, [
     "⚠ h.bF: the fill of \"Box\" was at 10%, now 100%: a fill bound to a colour variable takes the colour's alpha. " +
-      "For 10%, bind a variable whose colour has that alpha, or set the layer's opacity",
+      "For 10%, bind a variable whose colour has that alpha (the layer's opacity would fade all of the layer, " +
+      "not only its fill)",
     "⚠ h.bS: the stroke of \"Box\" was at 25%, now 50%: a stroke bound to a colour variable takes the colour's " +
-      "alpha. For 25%, bind a variable whose colour has that alpha, or set the layer's opacity",
+      "alpha. For 25%, bind a variable whose colour has that alpha (the layer's opacity would fade all of the " +
+      "layer, not only its stroke)",
   ]);
   console.log(failed ? `\n${failed} FAILED` : "\nall helper checks passed");
   process.exit(failed ? 1 : 0);

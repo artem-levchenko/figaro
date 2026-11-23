@@ -24,14 +24,15 @@ file; the release notes say when it has to be imported again.
   (#11). `const out = { types: {} }; out.types[n.type] = …` made Figaro take the code for a writer, so the
   instances Figma updates on a page loaded for the first time came as the script's, and `-R` rolled them back
   and failed. Now a slot one level down counts as the script's own too, through a key that only ever holds
-  its own objects and arrays. When a `-R` script is rolled back, the error quotes what made its code look like
-  it writes (`` `acc.count++` ``, `` `n.resize()` ``), so an agent whose script only reads knows what to change.
+  its own objects and arrays. When a `-R` script is rolled back, the error quotes the first three places that
+  made its code look like it writes, in the code's order (`` `acc.count++`, `n.name =` ``), so an agent whose
+  script only reads knows what to change, and one whose script writes sees the write.
 - **`h.bF` and `h.bS` say when binding changed a paint's opacity** (#11). On the layer, a paint bound to a
   colour variable takes the colour's alpha as its opacity, so a fill at 10% bound to an opaque colour came out
   at 100%, and the report said only `fills`. Now the helper prints
   `⚠ h.bF: the fill of "Box" was at 10%, now 100%` and what holds instead: a variable whose colour has that
-  alpha, or the layer's opacity. Setting the opacity back on the bound paint would last only until the
-  variable's value changed, when Figma takes the alpha again.
+  alpha (the layer's opacity would fade the whole layer). Setting the opacity back on the bound paint would
+  last only until the variable's value changed, when Figma takes the alpha again.
 - **A picture of a hidden layer says that it is empty** (#11). Figma exports a hidden layer, a layer inside a
   hidden one and a layer with nothing to draw as a 1×1 picture, and `figaro shot` and `exec --shot` saved it
   without a word. Now they warn, and name the hidden layer above when it is a parent that hides it. `h.shot`

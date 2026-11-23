@@ -114,7 +114,7 @@ order. If you write it by hand:
   On the layer, a paint bound to a colour variable takes the colour's alpha as its opacity: a fill at 10%
   bound to an opaque colour is at 100% (`h.bF` and `h.bS` print a `⚠` line when that happens). An opacity
   set on the bound paint afterwards holds only until the variable's value changes. For a fill at 10%, bind a
-  variable whose colour has that alpha, or set the layer's `opacity`.
+  variable whose colour has that alpha; the layer's `opacity` would fade the whole layer, not only the fill.
 - **Empty `fills`** — nothing to bind: first `node.fills = h.solid("#000")`, then `h.bF(node, 0, v)`.
 - **A fill's opacity** lives in `paint.opacity`, not in the variable's colour: don't lose it when you
   overwrite the fill.
@@ -243,10 +243,10 @@ order. If you write it by hand:
 - **Figma has one Cmd+Z for the whole file**: it undoes the last step, whoever made it.
 - **`read-only: the script changed N — rolled back. The code may write (…)`** — Figma doesn't say who made a
   change, so while code that may write runs, every change counts as the script's: Figma's own updates of a
-  page loaded for the first time too. The quote is what made the code look like it writes. If the script
-  only reads, rewrite that part and run it again: gather results in objects and arrays of the script's own
-  (`const out = { types: {} }; out.types[n.type] = …` is fine), not in an object a function got as a
-  parameter or one that may hold a layer.
+  page loaded for the first time too. The quotes are the first three places, in the code's order, that made
+  the code look like it writes. If the script only reads, rewrite those parts and run it again: gather results
+  in objects and arrays of the script's own (`const out = { types: {} }; out.types[n.type] = …` is fine), not
+  in an object a function got as a parameter or one that may hold a layer.
 - **`⚠ N changed in the file while the script ran … not by the script`** — the code only reads, so Figma or
   someone in the file made those changes, and nothing was rolled back. In a large file Figma updates
   instances on a page the first time a script loads it; the same script once more gives a clean answer.

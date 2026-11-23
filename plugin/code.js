@@ -9,7 +9,7 @@ figma.showUI(__html__, { width: UI_WIDTH, height: 70, title: "Figaro Relay", the
 // disk and asks for a re-Run when they differ, because a running plugin keeps
 // the code it started with. Bump it on every change to plugin/ —
 // tests/test_plugin_version.py fails until you do.
-const PLUGIN_VERSION = "2026-11-23.1";
+const PLUGIN_VERSION = "2026-11-24.1";
 
 // What this build can do beyond a plain exec, so the bridge knows which
 // requests it may send (an older build gets `figaro reload` first).
@@ -228,7 +228,8 @@ function opacityNote(who, node, prop, idx, had) {
   const what = prop === "fills" ? "fill" : "stroke";
   CURRENT_PRINT("⚠ " + who + ": the " + what + " of \"" + node.name + "\" was at " + pct(had) + ", now " + pct(now) +
     ": a " + what + " bound to a colour variable takes the colour's alpha. For " + pct(had) + ", bind a " +
-    "variable whose colour has that alpha, or set the layer's opacity");
+    "variable whose colour has that alpha (the layer's opacity would fade all of the layer, not only its " +
+    what + ")");
 }
 
 function opacityOf(paint) {
@@ -882,56 +883,70 @@ function codeMayWrite(code, libs) {
   return whyMayWrite(code, libs) !== null;
 }
 
-// What in the code may write, as the -R rollback quotes it ("`out.libs[…] =`"), or null when
-// the code only reads.
+// What in the code may write, as the -R rollback quotes it ("`acc.count++`, `n.name =`"): the
+// first WHY_QUOTES places in the code's order, so the real write is there among what only looks
+// like one; null when the code only reads.
+const WHY_QUOTES = 3;
 function whyMayWrite(code, libs) {
   if (Array.isArray(libs) && libs.length) return "it runs --lib files";
   const src = codeOnly(code);
-  let m = VARIABLE_WRITES.exec(src) || WRITE_CALLS.exec(src);
-  if (m) return quoteCode((m[0][0] === "." && assignTarget(src, m.index) || "") + m[0].replace(/\($/, "()"));
-  const figmaCall = /\bfigma\s*\??\.\s*([A-Za-z_$][\w$]*)\s*(?:\?\.\s*)?\(/g;
-  while ((m = figmaCall.exec(src))) if (!FIGMA_READS.test(m[1])) return quoteCode("figma." + m[1] + "()");
-  const helperCall = /\bh\s*\??\.\s*([A-Za-z_$][\w$]*)\s*(?:\?\.\s*)?\(/g;
-  while ((m = helperCall.exec(src))) if (!HELPER_READS.test(m[1])) return quoteCode("h." + m[1] + "()");
+  const hits = [];  // [where in the code, what to say]
+  // Each kind of place, in the code's order, until it has given WHY_QUOTES: its later ones
+  // could never be among the first. `found(m)` gives [where, what] or nothing.
+  const scan = (re, found) => {
+    re.lastIndex = 0;
+    for (let n = 0, m; n < WHY_QUOTES && (m = re.exec(src));) {
+      const at = found(m);
+      if (at && !hits.some((x) => x[1] === at[1])) {
+        hits.push(at);
+        n++;
+      }
+      if (!m[0]) re.lastIndex++;
+    }
+  };
+  for (const re of [VARIABLE_WRITES, WRITE_CALLS]) {
+    scan(new RegExp(re.source, "g"), (m) =>
+      [m.index, quoteCode((m[0][0] === "." && assignTarget(src, m.index) || "") + m[0].replace(/\($/, "()"))]);
+  }
+  scan(/\bfigma\s*\??\.\s*([A-Za-z_$][\w$]*)\s*(?:\?\.\s*)?\(/g, (m) =>
+    !FIGMA_READS.test(m[1]) && [m.index, quoteCode("figma." + m[1] + "()")]);
+  scan(/\bh\s*\??\.\s*([A-Za-z_$][\w$]*)\s*(?:\?\.\s*)?\(/g, (m) =>
+    !HELPER_READS.test(m[1]) && [m.index, quoteCode("h." + m[1] + "()")]);
   const { own, bound, deep } = bindings(src);
   for (const name of ["figma", "h"]) {  // passed on: what is called on it under another name is unknown
-    const passed = new RegExp("(?:^|[^\\w$.])" + name + "[ \\t]*(?=[\\n,;)\\]}]|$)");
-    if (!bound.has(name) && passed.test(src)) return "it passes " + name + " on";
+    if (bound.has(name)) continue;
+    scan(new RegExp("(?:^|[^\\w$.])" + name + "[ \\t]*(?=[\\n,;)\\]}]|$)", "g"), (m) =>
+      [m.index, "it passes " + name + " on"]);
   }
-  const assign = /\bObject\s*\.\s*assign\s*\(\s*(?:([A-Za-z_$][\w$]*)\s*(?=[,)])|([{[]))?/g;
-  while ((m = assign.exec(src))) {
-    if (!m[2] && !(m[1] && own.has(m[1]))) return quoteCode("Object.assign(" + (m[1] || "") + "…)");
-  }
-  const write = new RegExp("(\\.\\s*[A-Za-z_$][\\w$]*|\\])\\s*(" + ASSIGN_OP + ")", "g");
-  while ((m = write.exec(src))) {
+  scan(/\bObject\s*\.\s*assign\s*\(\s*(?:([A-Za-z_$][\w$]*)\s*(?=[,)])|([{[]))?/g, (m) =>
+    !m[2] && !(m[1] && own.has(m[1])) && [m.index, quoteCode("Object.assign(" + (m[1] || "") + "…)")]);
+  scan(new RegExp("(\\.\\s*[A-Za-z_$][\\w$]*|\\])\\s*(" + ASSIGN_OP + ")", "g"), (m) => {
     const end = m.index + m[1].length;
     const target = assignTarget(src, end);
     if (target === null) {  // [a, b] = …: sets a property only if it names one
       const start = groupStart(src, end - 1);
-      if (MEMBER.test(src.slice(start, end))) return quoteCode(src.slice(start, end) + " " + m[2]);
-      continue;
+      return MEMBER.test(src.slice(start, end)) && [start, quoteCode(src.slice(start, end) + " " + m[2])];
     }
-    if (!ownSlot(target, own, deep) && !NOT_THE_FILE.test(target.replace(/\s+/g, ""))) {
-      return quoteCode(target + (/^(?:\+\+|--)$/.test(m[2]) ? "" : " ") + m[2]);
-    }
-  }
-  const objectPattern = /\}\s*=(?![=>])/g;  // ({ a: n.name } = …)
-  while ((m = objectPattern.exec(src))) {
+    return !ownSlot(target, own, deep) && !NOT_THE_FILE.test(target.replace(/\s+/g, "")) &&
+      [end - target.length, quoteCode(target + (/^(?:\+\+|--)$/.test(m[2]) ? "" : " ") + m[2])];
+  });
+  scan(/\}\s*=(?![=>])/g, (m) => {  // ({ a: n.name } = …)
     const start = groupStart(src, m.index);
-    if (start < 0) return quoteCode("} =");
+    if (start < 0) return [m.index, quoteCode("} =")];
     const declared = /(?:^|[^\w$])(?:const|let|var)\s*$/.test(src.slice(Math.max(0, start - 8), start));
-    if (!declared && MEMBER.test(src.slice(start, m.index + 1))) return quoteCode(src.slice(start, m.index + 1) + " =");
-  }
-  const before = /(?:\+\+|--)\s*([A-Za-z_$][\w$]*)(?=\s*(?:\??\.|\[))/g;  // ++x.y
-  while ((m = before.exec(src))) {
+    return !declared && MEMBER.test(src.slice(start, m.index + 1)) &&
+      [start, quoteCode(src.slice(start, m.index + 1) + " =")];
+  });
+  scan(/(?:\+\+|--)\s*([A-Za-z_$][\w$]*)(?=\s*(?:\??\.|\[))/g, (m) => {  // ++x.y
     let k = m.index;
     while (k > 0 && /[ \t]/.test(src[k - 1])) k--;
-    if (/[\w$)\]]/.test(src[k - 1] || "")) continue;  // x++ on the same line: it belongs to x
+    if (/[\w$)\]]/.test(src[k - 1] || "")) return null;  // x++ on the same line: it belongs to x
     const start = m.index + m[0].length - m[1].length;
     const target = src.slice(start, chainEnd(src, start + m[1].length));
-    if (!ownSlot(target, own, deep)) return quoteCode(m[0].slice(0, 2) + target);
-  }
-  return null;
+    return !ownSlot(target, own, deep) && [m.index, quoteCode(m[0].slice(0, 2) + target)];
+  });
+  if (!hits.length) return null;
+  return hits.sort((a, b) => a[0] - b[0]).slice(0, WHY_QUOTES).map((x) => x[1]).join(", ");
 }
 
 // A bit of code for a message: one line, what is in brackets shortened ("out.libs[…] =").
@@ -1259,13 +1274,25 @@ function deepKeys(src, own) {
   const good = new Map(), bad = new Map(), none = new Set();
   const add = (map, name, key) => { if (!map.has(name)) map.set(name, new Set()); map.get(name).add(key); };
   let m;
+  const literal = (name, open) => {
+    const keys = literalKeys(src, open);
+    if (!keys.whole) none.add(name);
+    for (const k of keys.own) add(good, name, k);
+    for (const k of keys.other) add(bad, name, k);
+  };
   const decl = /\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=(?![=>])\s*(?=\{)/g;
-  while ((m = decl.exec(src))) {
-    if (!own.has(m[1])) continue;
-    const keys = literalKeys(src, decl.lastIndex);
-    if (!keys.whole) none.add(m[1]);
-    for (const k of keys.own) add(good, m[1], k);
-    for (const k of keys.other) add(bad, m[1], k);
+  while ((m = decl.exec(src))) if (own.has(m[1])) literal(m[1], decl.lastIndex);
+  // A name of its own given a whole new value later (out = { types: n }): that
+  // literal's keys count as well, and a value with no keys to read leaves it none.
+  const reset = new RegExp("([A-Za-z_$][\\w$]*)\\s*" + ASSIGN_OP, "g");
+  while ((m = reset.exec(src))) {
+    if (!own.has(m[1]) || /[\w$]/.test(src[m.index - 1] || "")) continue;
+    let k = m.index;
+    while (k > 0 && /\s/.test(src[k - 1])) k--;
+    if (/[\w$.]/.test(src[k - 1] || "")) continue;  // a property, or a declaration (above)
+    const open = /^\s*\{/.exec(src.slice(reset.lastIndex, reset.lastIndex + 64));
+    if (open) literal(m[1], reset.lastIndex + open[0].length - 1);
+    else none.add(m[1]);
   }
   const set = new RegExp("([A-Za-z_$][\\w$]*)\\s*\\.\\s*([A-Za-z_$][\\w$]*)\\s*(" + ASSIGN_OP + ")", "g");
   while ((m = set.exec(src))) {

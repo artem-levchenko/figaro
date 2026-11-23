@@ -380,6 +380,7 @@ function check(label, actual, expected) {
       "const stats = { libs: {} }; stats.libs[\"k\"] = 1; ++stats.libs.k; return stats;",
       "const out = { by: {} }; for (const n of figma.currentPage.children) (out.by[n.type] ||= []).push(n.id); return out;",
       "const out = {}; out.libs = {}; out.libs.count = 1; return out;",
+      "let out = { types: {} }; out = { types: {} }; out.types.FRAME = 1; return out;",
     ];
     check("a slot of its own object's own object", deepReads.map((c) => may(c)), deepReads.map(() => false));
     const deepWrites = [
@@ -390,6 +391,9 @@ function check(label, actual, expected) {
       "const out = { rows: [] }; out.rows.push(figma.currentPage); out.rows[0].name = \"x\";",
       "const out = { types: figma.currentPage }; out.types.name = \"x\";",
       "function walk(n, acc) { acc.count++; } walk(figma.currentPage, { count: 0 });",
+      // a whole new value later: its literal counts too (found in review)
+      "let out = { types: {} };\nfor (const n of figma.currentPage.children) { out = { types: n }; out.types.name = \"x\"; }",
+      "let out = { types: {} }; out = JSON.parse(\"{}\"); out.types.name = \"x\";",
     ];
     check("…not through a key that may hold a layer, nor a parameter", deepWrites.map((c) => may(c)),
       deepWrites.map(() => true));
@@ -404,8 +408,13 @@ function check(label, actual, expected) {
       env.api.whyMayWrite("rows[figma.currentPage.children.length - 1].name = 1;"),
       env.api.whyMayWrite("return 1;", [{ name: "a", hash: "x" }]),
       env.api.whyMayWrite("return figma.root.name;"),
+      // the places in the code's order, three at most: the real write is among them (found in review)
+      env.api.whyMayWrite("const acc = [0]; function count(a) { a.count++; }\n" +
+        "for (const n of figma.currentPage.children) { count(acc); n.name = \"x\"; }"),
+      env.api.whyMayWrite("n.x = 1; n.y = 2; n.resize(1, 1); n.name = \"a\"; n.x = 3;"),
     ], ["`out.types.name =`", "`acc.count++`", "`figma.currentPage.children[0].remove()`", "`n.resize()`",
-        "`h.fill()`", "`figma.createFrame()`", "it passes h on", "`rows[…].name =`", "it runs --lib files", null]);
+        "`h.fill()`", "`figma.createFrame()`", "it passes h on", "`rows[…].name =`", "it runs --lib files", null,
+        "`a.count++`, `n.name =`", "`n.x =`, `n.y =`, `n.resize()`"]);
   }
   {
     // A read-only script in a large file that was just opened: Figma updates
