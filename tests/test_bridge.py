@@ -635,6 +635,10 @@ def test_two_documents_sharing_a_name_stay_ambiguous():
     ("in an unloaded font Inter Bold", "h.setText"),
     ('in get_currentUser: "currentuser" permission not specified in manifest.json', "figma.currentUser"),
     ("Unable to find a variant matching", "h.variantsOf"),
+    ("aborted: figma.importComponentByKeyAsync() did not answer before --timeout ran out — the script "
+     "was stopped", "A retry is unlikely to help"),
+    ("aborted: --timeout ran out while the script waited for figma.importStyleByKeyAsync() — the script "
+     "was stopped; of the 181 s it ran, its calls to Figma took 178 s", "Split the work into several"),
     ("something entirely unrecognised", None),
 ])
 def test_find_hint(error_text, expected):

@@ -416,6 +416,12 @@ ERROR_HINTS = [
     ("took back a step that was not the script's",
      "only the user can bring that step back: tell them at once to press Cmd+Shift+Z in Figma, "
      "before anyone changes the file. Don't run undo or the script again before they have"),
+    ("ran out while the script waited for",
+     "many calls that each answered used the time up, not one that hung: the error says which. Split "
+     "the work into several scripts of a few dozen calls each (the file is free between them, and "
+     "each answers with what it did), or give the script a longer --timeout. An import by key takes "
+     "seconds: import each component, style or variable once, and take what the file already has "
+     "by id"),
     ("did not answer before --timeout ran out",
      "Figma never answered this call: the script was stopped and the file is free. A retry is "
      "unlikely to help. Import by key and figma.teamLibrary sometimes never answer at all: take "

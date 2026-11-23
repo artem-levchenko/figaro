@@ -81,6 +81,8 @@ function makeFigma() {
         ? Promise.reject(new Error("could not find variable with key")) : new Promise(() => {}),
     },
     importComponentByKeyAsync: () => new Promise(() => {}),
+    // An import by key that answers, slowly, as one from a large library does.
+    importStyleByKeyAsync: () => new Promise((r) => setTimeout(() => r({ name: "Style" }), 150)),
     // A library call that never settles, as figma.teamLibrary sometimes does.
     teamLibrary: { getAvailableLibraryVariableCollectionsAsync: () => new Promise(() => {}) },
     on(event, fn) { if (event === "documentchange") handlers.push(fn); },
@@ -157,7 +159,7 @@ function makeFigma() {
 function load() {
   const env = makeFigma();
   env.api = new Function("figma", "__html__", src +
-    "\nreturn { HISTORY, OUTSIDE, RUNS, ABORTED, GATES, markAborted, SCRIPT_LINE_OFFSET, codeMayWrite };")(env.figma, html);
+    "\nreturn { HISTORY, OUTSIDE, RUNS, ABORTED, GATES, markAborted, SCRIPT_LINE_OFFSET, codeMayWrite, whyMayWrite };")(env.figma, html);
   return env;
 }
 
@@ -271,12 +273,16 @@ function check(label, actual, expected) {
     check("a read-only script that reads", [ok.type, ok.value], ["result", "Draft"]);
 
     const r = await exec(env, 'figma.edit("~1:1 Card fills", "+8:1 Box"); return 1;', { readOnly: true });
-    check("a read-only script that wrote fails", [r.type, r.text], ["error", "read-only: the script changed 2 — rolled back"]);
+    // The note says what in the code made it count as one that may write.
+    const why = ". The code may write (`figma.edit()`), so every change made while it ran counted as its own, " +
+      "Figma's updates on a page loaded for the first time too. If it only reads, keep what it gathers " +
+      "in variables of its own and run it again";
+    check("a read-only script that wrote fails", [r.type, r.text], ["error", "read-only: the script changed 2 — rolled back" + why]);
     check("…and is rolled back", [r.rolledBack, env.undo.steps.length, env.undo.reverted.length], [true, 0, 1]);
     check("…which is not news", [env.api.OUTSIDE.local, env.api.HISTORY.length], [0, 0]);
 
     const t = await exec(env, 'figma.edit("~1:1 Card fills"); throw new Error("oops");', { readOnly: true });
-    check("a read-only script that wrote and threw", t.text, "oops — read-only: the script changed 1 — rolled back");
+    check("a read-only script that wrote and threw", t.text, "oops — read-only: the script changed 1 — rolled back" + why);
 
     // Two at once: whose edit it was is unknown, so nothing is rolled back.
     const writer = exec(env, 'await new Promise((r) => setTimeout(r, 80)); figma.edit("~1:1 Card fills"); return 1;');
@@ -365,6 +371,41 @@ function check(label, actual, expected) {
     ];
     check("code that may write", writes.map((c) => may(c)), writes.map(() => true));
     check("…and so does code with --lib files", may("return 1;", [{ name: "a", hash: "x" }]), true);
+
+    // One level deeper into an object of its own, through a key that only ever
+    // holds the script's own objects: what a scan gathers (#11).
+    const deepReads = [
+      "const out = { types: {}, total: 0 };\nfor (const n of figma.currentPage.findAll()) {\n" +
+        "  out.types[n.type] = (out.types[n.type] || 0) + 1; out.total++; }\nreturn out;",
+      "const stats = { libs: {} }; stats.libs[\"k\"] = 1; ++stats.libs.k; return stats;",
+      "const out = { by: {} }; for (const n of figma.currentPage.children) (out.by[n.type] ||= []).push(n.id); return out;",
+      "const out = {}; out.libs = {}; out.libs.count = 1; return out;",
+    ];
+    check("a slot of its own object's own object", deepReads.map((c) => may(c)), deepReads.map(() => false));
+    const deepWrites = [
+      "const out = { types: {} }; out.types = figma.currentPage.children[0]; out.types.name = \"x\";",
+      "const base = {}; const out = { ...base, types: {} }; out.types.name = \"x\";",
+      "const out = { types: {} }; out[k] = figma.currentPage; out.types.name = \"x\";",
+      "const out = { types: {} }; Object.assign(out, { types: figma.currentPage }); out.types.name = \"x\";",
+      "const out = { rows: [] }; out.rows.push(figma.currentPage); out.rows[0].name = \"x\";",
+      "const out = { types: figma.currentPage }; out.types.name = \"x\";",
+      "function walk(n, acc) { acc.count++; } walk(figma.currentPage, { count: 0 });",
+    ];
+    check("…not through a key that may hold a layer, nor a parameter", deepWrites.map((c) => may(c)),
+      deepWrites.map(() => true));
+    check("what in the code may write, quoted", [
+      env.api.whyMayWrite("const out = { types: figma.currentPage }; out.types.name = \"x\";"),
+      env.api.whyMayWrite("function walk(n, acc) { acc.count++; }"),
+      env.api.whyMayWrite("figma.currentPage.children[0].remove();"),
+      env.api.whyMayWrite("const n = await h.node(\"1:1\"); n.resize(10, 10);"),
+      env.api.whyMayWrite("await h.fill(n, \"#fff\");"),
+      env.api.whyMayWrite("figma.createFrame();"),
+      env.api.whyMayWrite("const H = h; return H;"),
+      env.api.whyMayWrite("rows[figma.currentPage.children.length - 1].name = 1;"),
+      env.api.whyMayWrite("return 1;", [{ name: "a", hash: "x" }]),
+      env.api.whyMayWrite("return figma.root.name;"),
+    ], ["`out.types.name =`", "`acc.count++`", "`figma.currentPage.children[0].remove()`", "`n.resize()`",
+        "`h.fill()`", "`figma.createFrame()`", "it passes h on", "`rows[…].name =`", "it runs --lib files", null]);
   }
   {
     // A read-only script in a large file that was just opened: Figma updates
@@ -384,6 +425,20 @@ function check(label, actual, expected) {
     check("…but told", r.notice, "read-only: 1 changed in the file while the script ran (Card) — not by the " +
       "script: its code only reads, so Figma itself or someone in the file made them; nothing rolled back");
     check("…and counted as made in Figma itself", env.api.OUTSIDE.local, 3);
+  }
+  {
+    // The same with a scan that gathers its results in nested objects of its own (#11): it
+    // used to count as a writer, and -R rolled back what Figma updated as the script's.
+    const env = load();
+    const run = exec(env, 'const out = { types: {}, total: 0 };\nconst p = await figma.getNodeByIdAsync("1:1");\n' +
+      "await new Promise((r) => setTimeout(r, 60));\nout.types[p.id] = (out.types[p.id] || 0) + 1;\n" +
+      "out.total++;\nreturn out;", { readOnly: true });
+    await sleep(20);
+    env.figmaEdit("~1:1 Card width");
+    const r = await run;
+    check("a scan into nested objects of its own: Figma's changes are not rolled back",
+      [r.type, r.value, r.rolledBack, env.undo.log.includes("undo"), /^read-only: 1 changed/.test(r.notice)],
+      ["result", { types: { "1:1": 1 }, total: 1 }, undefined, false, true]);
   }
   {
     // A write named only in a comment or a string is no write: Figma's own
@@ -532,7 +587,9 @@ function check(label, actual, expected) {
       const w = await exec(env, 'figma.edit("~1:1 Card fills"); return 1;', { readOnly: true });
       check("a -R writer after a read rolls back its own change alone",
         [w.type, w.text, w.rolledBack, env.undo.reverted.slice(-1)[0]],
-        ["error", "read-only: the script changed 1 — rolled back", true, ["1:1"]]);
+        ["error", "read-only: the script changed 1 — rolled back" + ". The code may write (`figma.edit()`), so every change made while it ran counted as its own, " +
+          "Figma's updates on a page loaded for the first time too. If it only reads, keep what it gathers " +
+          "in variables of its own and run it again", true, ["1:1"]]);
     }
     {
       // No update comes: the window ends with FLUSH_MS, and the writer starts then.
@@ -763,6 +820,14 @@ function check(label, actual, expected) {
     check("…and h.bF with a library key, which imports it",
       [bound.type, /^aborted: figma\.variables\.importVariableByKeyAsync\(\) did not answer/.test(bound.text)],
       ["error", true]);
+    // Many slow calls that each answer use the time up: the error says so, and where the time went (#11).
+    const slow = await exec(env, 'for (const k of ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j"])\n' +
+      "  await figma.importStyleByKeyAsync(k);\nreturn 1;", { timeout: 1.1 });
+    check("many slow calls: the time ran out while the script waited, not a call that hung",
+      [slow.type, /^aborted: --timeout ran out while the script waited for figma\.importStyleByKeyAsync\(\) — the script was stopped; of the 1\.\d s it ran, its calls to Figma took 1\.\d s: figma\.importStyleByKeyAsync\(\) ×8, 1\.\d s$/.test(slow.text), slow.line],
+      ["error", true, 2]);
+    check("…and one call that hung still says so, with no time summary under a second",
+      [/did not answer before --timeout ran out — the script was stopped$/.test(hung.text)], [true]);
     const refused = await exec(env, 'return await h.var_("gone");');
     check("a key Figma refuses is still null, not an error", [refused.type, refused.value], ["result", null]);
     check("no gate outlives a helper's script either", env.api.GATES.size, 0);

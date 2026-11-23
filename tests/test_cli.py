@@ -279,6 +279,35 @@ def test_link_prints_links(monkeypatch, capsys):
     assert "the file changed meanwhile" in err and "log: a line" in err
 
 
+def test_an_empty_shot_says_why(tmp_path):
+    # Figma exports a hidden layer, one inside a hidden layer, and one with nothing to draw as
+    # an empty 1×1 picture without a word.
+    lines = cli_extras.save_shots([shot(data=png(1, 1), hidden=True)], tmp_path)
+    assert "⚠ the picture is empty: it is hidden" in lines[-1] and "visible = true" in lines[-1]
+    lines = cli_extras.save_shots([shot(data=png(1, 1), hidden={"id": "1:1", "name": "Panel"})], tmp_path)
+    assert '"Panel" 1:1, a layer above it, is hidden' in lines[-1]
+    lines = cli_extras.save_shots([shot(data=png(1, 1))], tmp_path)
+    assert "⚠ the picture is 1×1: the layer has nothing Figma can draw" in lines[-1]
+    lines = cli_extras.save_shots([shot(data=png(20, 10))], tmp_path)
+    assert len(lines) == 1 and "⚠" not in lines[0]
+
+
+def test_an_unknown_flag_is_named(monkeypatch, capsys):
+    # `-o out.json` took `out.json` for the script: "--stdin: not allowed with argument code".
+    for argv in (["exec", "--stdin", "-o", "out.json"], ["exec", "-o", "out.json", "--stdin"]):
+        rc, out, err, calls = cli(monkeypatch, capsys, *argv)
+        assert rc == 2 and not calls
+        assert "figaro exec: error: unknown flag -o — `figaro exec -h` lists the flags there are" in err
+    rc, out, err, calls = cli(monkeypatch, capsys, "exec", "-f", "a.js", "--bogus=1", "x")
+    assert "unknown flag --bogus=1" in err
+    # a flag it knows, cut short, keeps argparse's own words
+    rc, out, err, calls = cli(monkeypatch, capsys, "exec", "--time", "5", "--stdin", "x")
+    assert "argument code: not allowed with argument --stdin" in err
+    sub = next(a for a in figaro.build_parser()._actions if isinstance(a, figaro.argparse._SubParsersAction))
+    assert figaro.unknown_flags(sub.choices["exec"], ["-1", "-R", "-t5", "--tim", "--", "-x"]) == []
+    assert figaro.unknown_flags(sub.choices["exec"], ["-o", "--out", "--timeoutx"]) == ["-o", "--out", "--timeoutx"]
+
+
 def test_shot_leaves_the_callers_other_files_alone(tmp_path):
     for name in ("1-2.md", "1-2.txt", "1-2-notes.png", "1-2-p1.png", "1-2-p2.jpg"):
         (tmp_path / name).write_text("x")

@@ -190,6 +190,30 @@ check("sel maps selection", h.sel(), [
   } catch (e) { why = e.message; }
   Date.now = now;
   check("annotations: stops when h.ck() says so", why, "stopped");
+
+  // h.bF and h.bS keep the paint's opacity (#11). Figma's setBoundVariableForPaint gives the paint
+  // the opacity of the variable's colour: 1 for an opaque one, so a fill at 10% came out at 100%.
+  const vars = {
+    "VariableID:1:1": { id: "VariableID:1:1", name: "brand", a: 1 },
+    "VariableID:1:2": { id: "VariableID:1:2", name: "scrim", a: 0.5 },
+  };
+  figma.variables.getVariableByIdAsync = async (id) => vars[id] || null;
+  figma.variables.setBoundVariableForPaint = (paint, field, v) => Object.assign({}, paint,
+    { opacity: v.a, boundVariables: { [field]: { type: "VARIABLE_ALIAS", id: v.id } } });
+  const solid = (opacity) => Object.assign({ type: "SOLID", color: { r: 0, g: 0, b: 0 } },
+    opacity === undefined ? {} : { opacity });
+  const box = { name: "Box", fills: [solid(0.1), solid(1)], strokes: [solid(0.25)] };
+  await h.bF(box, 0, "VariableID:1:1");
+  await h.bF(box, 1, "VariableID:1:1");
+  await h.bS(box, 0, "VariableID:1:1");
+  check("bF/bS: a paint bound to an opaque colour keeps its opacity",
+    [box.fills[0].opacity, box.fills[1].opacity, box.strokes[0].opacity, box.fills[0].boundVariables.color.id],
+    [0.1, 1, 0.25, "VariableID:1:1"]);
+  const scrim = { name: "Scrim", fills: [solid(0.1), solid()] };
+  await h.bF(scrim, 0, "VariableID:1:2");
+  await h.bF(scrim, 1, "VariableID:1:2");
+  check("bF: a colour with an alpha of its own keeps what Figma gives",
+    scrim.fills.map((p) => p.opacity), [0.5, 0.5]);
   console.log(failed ? `\n${failed} FAILED` : "\nall helper checks passed");
   process.exit(failed ? 1 : 0);
 })();

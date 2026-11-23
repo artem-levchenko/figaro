@@ -10,8 +10,10 @@ A `figaro exec` script runs as the body of an async function with the parameters
 - **`--timeout`** (60 s) — the script's deadline. Calls to `figma.*Async`, also under `figma.variables` and
   `figma.teamLibrary`, check it themselves: after the deadline a new call throws, and a call Figma never
   answered ends with the error "did not answer before --timeout ran out". So does an import by key in
-  `h.importComp`, `h.importVar`, `h.var_`, `h.bF`, `h.bS` and `h.bN`. A `while`, `do … while` or `for (;;)`
-  loop ends at the deadline too: "the loop on line N was still running when --timeout ran out". Node methods
+  `h.importComp`, `h.importVar`, `h.var_`, `h.bF`, `h.bS` and `h.bN`. When many calls that each answered used
+  the time up, the error says "--timeout ran out while the script waited for figma.…()" and where the time
+  went: `of the 181 s it ran, its calls to Figma took 178 s: figma.importComponentByKeyAsync() ×41, 150 s`.
+  A `while`, `do … while` or `for (;;)` loop ends at the deadline too: "the loop on line N was still running when --timeout ran out". Node methods
   (`getMainComponentAsync`, `exportAsync`, `setTextStyleIdAsync`…), the other helpers and `for … of` loops
   don't know the deadline — call `h.ck()` in a long `for … of` loop.
 - **`print(...)`** — lines in the answer's `logs`; the CLI prints them as `log: …`.
@@ -42,7 +44,7 @@ A `figaro exec` script runs as the body of an async function with the parameters
 | Helper | What it does |
 |---|---|
 | `await h.inspect(node, {depth, hidden})` | the data behind `figaro inspect`: layout, fills with style and variable names, texts, instances, keys (the comparison of a set's variants is made by the CLI from this data, not by the helper) |
-| `await h.shot(node, {format, scale, width, absolute})` | a picture in base64; `absolute: true` exports exactly the layer's size even if children or effects stick out of it (for a picture reused inside another mockup). The CLI is handier: `figaro shot` or `exec --shot` write a file |
+| `await h.shot(node, {format, scale, width, absolute})` | a picture in base64; `absolute: true` exports exactly the layer's size even if children or effects stick out of it (for a picture reused inside another mockup). `hidden` is `true` when the layer is hidden, or `{id, name}` of the hidden layer above it: Figma exports such a layer as an empty 1×1 picture. The CLI is handier: `figaro shot` or `exec --shot` write a file, and warn about an empty picture |
 
 ## Pictures
 
@@ -99,7 +101,7 @@ A component the file already has (its own or a library's; `inspect` prints its i
 |---|---|
 | `await h.var_(idOrKey)` | a variable by id (`VariableID:…`; also a library variable the file already uses — `inspect` prints its id) or by key (imports it) |
 | `await h.importVar(key)` | a variable of an enabled library, by key; Figma imports only published ones |
-| `await h.bF(node, i, v)` · `await h.bS(node, i, v)` | bind fill or stroke number `i` to a variable (an id, a key or the variable itself) |
+| `await h.bF(node, i, v)` · `await h.bS(node, i, v)` | bind fill or stroke number `i` to a variable (an id, a key or the variable itself). The paint keeps its opacity: a fill at 10% stays at 10% |
 | `await h.bN(node, prop, v)` | bind a number: `itemSpacing`, `counterAxisSpacing`, `paddingTop`…, `topLeftRadius`…, `width`, `height`, `minWidth`…, `strokeWeight`, `opacity` |
 
 A text's font to a variable: `text.setBoundVariable("fontSize", v)` — and the same for `fontFamily`,

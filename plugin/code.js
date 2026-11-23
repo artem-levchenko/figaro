@@ -9,7 +9,7 @@ figma.showUI(__html__, { width: UI_WIDTH, height: 70, title: "Figaro Relay", the
 // disk and asks for a re-Run when they differ, because a running plugin keeps
 // the code it started with. Bump it on every change to plugin/ —
 // tests/test_plugin_version.py fails until you do.
-const PLUGIN_VERSION = "2026-11-11.6";
+const PLUGIN_VERSION = "2026-11-23.1";
 
 // What this build can do beyond a plain exec, so the bridge knows which
 // requests it may send (an older build gets `figaro reload` first).
@@ -215,6 +215,18 @@ function copyPaints(node, prop, who) {
   return JSON.parse(JSON.stringify(paints));
 }
 
+// The paint bound to a colour variable, at the opacity it had. Figma's
+// setBoundVariableForPaint resets the paint's opacity: a fill at 10% bound to an
+// opaque colour came out at 100% (#11). When Figma gives it an opacity other
+// than 1 (the alpha of a colour that has one), that stays.
+function boundPaint(paint, v) {
+  const bound = figma.variables.setBoundVariableForPaint(paint, "color", v);
+  const had = typeof paint.opacity === "number" ? paint.opacity : 1;
+  const got = bound && typeof bound.opacity === "number" ? bound.opacity : 1;
+  if (had === 1 || got !== 1 || !bound) return bound;
+  return Object.assign({}, bound, { opacity: had });
+}
+
 // A key Figma would not import is the usual dead end — library variables
 // the file already uses can still be bound by id.
 function noVar(who, varOrId) {
@@ -232,7 +244,7 @@ const HELPERS = {
     if (!v) throw noVar("h.bF", varOrId);
     const f = copyPaints(node, "fills", "h.bF");
     if (!f[idx]) throw new Error("h.bF: '" + node.name + "' has no fill at index " + idx);
-    f[idx] = figma.variables.setBoundVariableForPaint(f[idx], "color", v);
+    f[idx] = boundPaint(f[idx], v);
     node.fills = f;
     return v;
   },
@@ -243,7 +255,7 @@ const HELPERS = {
     if (!v) throw noVar("h.bS", varOrId);
     const s = copyPaints(node, "strokes", "h.bS");
     if (!s[idx]) throw new Error("h.bS: '" + node.name + "' has no stroke at index " + idx);
-    s[idx] = figma.variables.setBoundVariableForPaint(s[idx], "color", v);
+    s[idx] = boundPaint(s[idx], v);
     node.strokes = s;
     return v;
   },
@@ -437,18 +449,52 @@ function markAborted(id) {
 // and the file stayed blocked (409) until the plugin restarted.
 const GATES = new Map();  // exec id -> fail()
 
+// It also keeps how long the script waited for each of Figma's calls, so a
+// script stopped at --timeout is told where its time went (`spent`): 68 imports
+// by key of a few seconds each used up three minutes, and the one running at
+// the deadline was not a call that hung.
 function makeGate(id, deadline) {
   let fail;
   const lost = new Promise((_, reject) => { fail = reject; });
   lost.catch(() => {});  // a script that awaited nothing never looks at it
-  const timer = deadline === Infinity ? null : setTimeout(fail, Math.max(0, deadline - Date.now()));
+  const started = Date.now();
+  const timer = deadline === Infinity ? null : setTimeout(() => fail("timeout"), Math.max(0, deadline - started));
+  const calls = new Map();  // name -> { n, ms, open: the calls not answered yet, each { t0 } }
   GATES.set(id, fail);
   return {
     race(p, name) {
       // made here, so its stack has the script's line that awaited the call
       const hung = new Error("aborted: figma." + name + "() did not answer before --timeout ran out — " +
         "the script was stopped");
-      return Promise.race([p, lost.then(null, () => { throw hung; })]);
+      const t0 = Date.now();
+      const tally = calls.get(name) || { n: 0, ms: 0, open: new Set() };
+      calls.set(name, tally);
+      tally.n++;
+      const call = { t0 };  // its own object: two calls can start in the same millisecond
+      tally.open.add(call);
+      const done = () => { tally.ms += Date.now() - t0; tally.open.delete(call); };
+      Promise.resolve(p).then(done, done);
+      return Promise.race([p, lost.then(null, (why) => {
+        // Many calls that each answered used the time up, not this one.
+        if (why === "timeout" && tally.n > 1 && Date.now() - t0 < (Date.now() - started) / 2) {
+          hung.message = "aborted: --timeout ran out while the script waited for figma." + name + "() — " +
+            "the script was stopped";
+        }
+        throw hung;
+      })]);
+    },
+    // "figma.importComponentByKeyAsync() ×41, 150 s; …", or null when Figma's calls took little of it.
+    spent() {
+      const now = Date.now();
+      const rows = Array.from(calls, ([name, t]) => ({
+        name, n: t.n, ms: t.ms + Array.from(t.open).reduce((s, c) => s + now - c.t0, 0),
+      })).sort((a, b) => b.ms - a.ms);
+      const total = rows.reduce((s, r) => s + r.ms, 0);
+      if (total < 1000) return null;
+      const sec = (ms) => (ms < 10000 ? Math.round(ms / 100) / 10 : Math.round(ms / 1000)) + " s";
+      return "of the " + sec(now - started) + " it ran, its calls to Figma took " + sec(total) + ": " +
+        rows.slice(0, 3).filter((r) => r.ms >= 100).map((r) => "figma." + r.name + "() ×" + r.n + ", " + sec(r.ms))
+          .join("; ") + (rows.length > 3 ? "; …" : "");
     },
     close() { if (timer !== null) clearTimeout(timer); GATES.delete(id); },
   };
@@ -718,6 +764,11 @@ figma.ui.onmessage = async (msg) => {
     ok = true;
   } catch (e) {
     error = e;
+    // Stopped at --timeout: where the time went, as the line that ran last may not say it.
+    const spent = /^aborted:/.test(errorText(e)) ? gate.spent() : null;
+    if (spent) {
+      try { e.message = errorText(e) + "; " + spent; } catch (_) { /* a frozen error keeps its text */ }
+    }
   } finally {
     CURRENT_PRINT = () => {};
     gate.close();
@@ -797,43 +848,56 @@ const MEMBER = /[\w$)\]]\s*(?:\??\.\s*[A-Za-z_$]|\[)/;  // x.y or x[k] inside a 
 // Figma doesn't report) and `any` (it may write at all). An undo has no code,
 // and does write.
 function writesOf(code, libs) {
-  if (code === undefined) return { variables: false, any: true };
-  const variables = VARIABLE_WRITES.test(codeOnly(code));
-  return { variables, any: variables || codeMayWrite(code, libs) };
+  if (code === undefined) return { variables: false, any: true, why: null };
+  const src = codeOnly(code);
+  const variables = VARIABLE_WRITES.test(src);
+  const why = whyMayWrite(code, libs);
+  return { variables, any: variables || !!why, why };
 }
 
 function codeMayWrite(code, libs) {
-  if (Array.isArray(libs) && libs.length) return true;
+  return whyMayWrite(code, libs) !== null;
+}
+
+// What in the code may write, as the -R rollback quotes it ("`out.libs[…] =`"), or null when
+// the code only reads.
+function whyMayWrite(code, libs) {
+  if (Array.isArray(libs) && libs.length) return "it runs --lib files";
   const src = codeOnly(code);
-  if (VARIABLE_WRITES.test(src) || WRITE_CALLS.test(src)) return true;
-  let m;
+  let m = VARIABLE_WRITES.exec(src) || WRITE_CALLS.exec(src);
+  if (m) return quoteCode((m[0][0] === "." && assignTarget(src, m.index) || "") + m[0].replace(/\($/, "()"));
   const figmaCall = /\bfigma\s*\??\.\s*([A-Za-z_$][\w$]*)\s*(?:\?\.\s*)?\(/g;
-  while ((m = figmaCall.exec(src))) if (!FIGMA_READS.test(m[1])) return true;
+  while ((m = figmaCall.exec(src))) if (!FIGMA_READS.test(m[1])) return quoteCode("figma." + m[1] + "()");
   const helperCall = /\bh\s*\??\.\s*([A-Za-z_$][\w$]*)\s*(?:\?\.\s*)?\(/g;
-  while ((m = helperCall.exec(src))) if (!HELPER_READS.test(m[1])) return true;
-  const { own, bound } = bindings(src);
+  while ((m = helperCall.exec(src))) if (!HELPER_READS.test(m[1])) return quoteCode("h." + m[1] + "()");
+  const { own, bound, deep } = bindings(src);
   for (const name of ["figma", "h"]) {  // passed on: what is called on it under another name is unknown
     const passed = new RegExp("(?:^|[^\\w$.])" + name + "[ \\t]*(?=[\\n,;)\\]}]|$)");
-    if (!bound.has(name) && passed.test(src)) return true;
+    if (!bound.has(name) && passed.test(src)) return "it passes " + name + " on";
   }
   const assign = /\bObject\s*\.\s*assign\s*\(\s*(?:([A-Za-z_$][\w$]*)\s*(?=[,)])|([{[]))?/g;
-  while ((m = assign.exec(src))) if (!m[2] && !(m[1] && own.has(m[1]))) return true;
-  const write = new RegExp("(\\.\\s*[A-Za-z_$][\\w$]*|\\])\\s*" + ASSIGN_OP, "g");
+  while ((m = assign.exec(src))) {
+    if (!m[2] && !(m[1] && own.has(m[1]))) return quoteCode("Object.assign(" + (m[1] || "") + "…)");
+  }
+  const write = new RegExp("(\\.\\s*[A-Za-z_$][\\w$]*|\\])\\s*(" + ASSIGN_OP + ")", "g");
   while ((m = write.exec(src))) {
     const end = m.index + m[1].length;
     const target = assignTarget(src, end);
     if (target === null) {  // [a, b] = …: sets a property only if it names one
-      if (MEMBER.test(src.slice(groupStart(src, end - 1), end))) return true;
+      const start = groupStart(src, end - 1);
+      if (MEMBER.test(src.slice(start, end))) return quoteCode(src.slice(start, end) + " " + m[2]);
       continue;
     }
-    if (!ownSlot(target, own) && !NOT_THE_FILE.test(target.replace(/\s+/g, ""))) return true;
+    if (!ownSlot(target, own, deep) && !NOT_THE_FILE.test(target.replace(/\s+/g, ""))) {
+      return quoteCode(target + (/^(?:\+\+|--)$/.test(m[2]) ? "" : " ") + m[2]);
+    }
   }
   const objectPattern = /\}\s*=(?![=>])/g;  // ({ a: n.name } = …)
   while ((m = objectPattern.exec(src))) {
     const start = groupStart(src, m.index);
-    if (start < 0) return true;
+    if (start < 0) return quoteCode("} =");
     const declared = /(?:^|[^\w$])(?:const|let|var)\s*$/.test(src.slice(Math.max(0, start - 8), start));
-    if (!declared && MEMBER.test(src.slice(start, m.index + 1))) return true;
+    if (!declared && MEMBER.test(src.slice(start, m.index + 1))) return quoteCode(src.slice(start, m.index + 1) + " =");
   }
   const before = /(?:\+\+|--)\s*([A-Za-z_$][\w$]*)(?=\s*(?:\??\.|\[))/g;  // ++x.y
   while ((m = before.exec(src))) {
@@ -841,9 +905,20 @@ function codeMayWrite(code, libs) {
     while (k > 0 && /[ \t]/.test(src[k - 1])) k--;
     if (/[\w$)\]]/.test(src[k - 1] || "")) continue;  // x++ on the same line: it belongs to x
     const start = m.index + m[0].length - m[1].length;
-    if (!ownSlot(src.slice(start, chainEnd(src, start + m[1].length)), own)) return true;
+    const target = src.slice(start, chainEnd(src, start + m[1].length));
+    if (!ownSlot(target, own, deep)) return quoteCode(m[0].slice(0, 2) + target);
   }
-  return false;
+  return null;
+}
+
+// A bit of code for a message: one line, what is in brackets shortened ("out.libs[…] =").
+function quoteCode(text) {
+  let s = String(text).replace(/\s+/g, " ").trim();
+  for (let prev = ""; prev !== s;) {
+    prev = s;
+    s = s.replace(/\[[^[\]]{13,}\]/, "[…]").replace(/\([^()]{13,}\)/, "(…)");
+  }
+  return "`" + (s.length > 60 ? s.slice(0, 59) + "…" : s) + "`";
 }
 
 // The code without its comments, strings and regular expressions, which say
@@ -1068,12 +1143,37 @@ function assignTarget(src, end) {
 
 // out.count, counts[n.type]: a slot of the script's own object. Not
 // rows[0].name: what an array or a map of its own holds may be a layer.
-function ownSlot(target, own) {
+// One level deeper only through a key that never holds anything but the
+// script's own objects (`deep`): out.types[n.type] after const out = { types: {} }.
+function ownSlot(target, own, deep) {
   const base = (/^[A-Za-z_$][\w$]*/.exec(target) || [""])[0];
   if (!own.has(base)) return false;
-  const rest = target.slice(base.length).trim();
+  let rest = target.slice(base.length).trim();
+  const key = /^\.\s*([A-Za-z_$][\w$]*)\s*/.exec(rest);
+  if (key && deep && deep.has(base) && deep.get(base).has(key[1]) && key[0].length < rest.length) {
+    rest = rest.slice(key[0].length);
+  }
   if (/^\.\s*[A-Za-z_$][\w$]*$/.test(rest)) return true;
   return rest[0] === "[" && groupEnd(rest, 0) === rest.length;
+}
+
+// The keys of the object literal at `open` whose values are the script's own
+// objects and arrays ({ types: {}, rows: [] }), and those whose values are not.
+function literalKeys(src, open) {
+  const own = new Set(), other = new Set();
+  const end = groupEnd(src, open);
+  if (end < 0) return { own, other, whole: false };
+  for (let i = open + 1; i < end - 1;) {
+    const key = /^\s*(?:([A-Za-z_$][\w$]*)\s*:)?/.exec(src.slice(i, end));
+    let j = i + key[0].length;
+    const value = j;
+    while (j < end - 1 && src[j] !== ",") j = "([{".includes(src[j]) ? groupEnd(src, j) : j + 1;
+    if (j < 0) return { own, other, whole: false };
+    if (key[1]) (ownValueAt(src, value) ? own : other).add(key[1]);
+    else if (/\S/.test(src.slice(value, j))) return { own, other, whole: false };  // { a }, { ...x }, { [k]: v }
+    i = j + 1;
+  }
+  return { own, other, whole: true };
 }
 
 // Whether the value at `i` is the script's own and nothing more: an object or
@@ -1125,7 +1225,46 @@ function bindings(src) {
     if (m[2] !== "=" || !ownValueAt(src, reset.lastIndex)) other.add(m[1]);
   }
   for (const name of other) own.delete(name);
-  return { own, bound: new Set(Array.from(own).concat(Array.from(other))) };
+  return { own, bound: new Set(Array.from(own).concat(Array.from(other))), deep: deepKeys(src, own) };
+}
+
+// For each name of `own`, the keys that only ever hold the script's own
+// objects and arrays: given them in its literal or by `name.key = {}`, and never
+// anything else. A computed key (name[k] = …), Object.assign(name, …), or a
+// literal with a spread or a shorthand in it leaves the name none.
+function deepKeys(src, own) {
+  const good = new Map(), bad = new Map(), none = new Set();
+  const add = (map, name, key) => { if (!map.has(name)) map.set(name, new Set()); map.get(name).add(key); };
+  let m;
+  const decl = /\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=(?![=>])\s*(?=\{)/g;
+  while ((m = decl.exec(src))) {
+    if (!own.has(m[1])) continue;
+    const keys = literalKeys(src, decl.lastIndex);
+    if (!keys.whole) none.add(m[1]);
+    for (const k of keys.own) add(good, m[1], k);
+    for (const k of keys.other) add(bad, m[1], k);
+  }
+  const set = new RegExp("([A-Za-z_$][\\w$]*)\\s*\\.\\s*([A-Za-z_$][\\w$]*)\\s*(" + ASSIGN_OP + ")", "g");
+  while ((m = set.exec(src))) {
+    if (!own.has(m[1]) || /[\w$.]/.test(src[m.index - 1] || "")) continue;
+    const ownValue = /^(?:=|\|\|=|\?\?=|&&=)$/.test(m[3]) && ownValueAt(src, set.lastIndex);
+    add(ownValue ? good : bad, m[1], m[2]);
+  }
+  const computed = new RegExp("([A-Za-z_$][\\w$]*)\\s*\\[", "g");  // name[k] = …: any key at all
+  while ((m = computed.exec(src))) {
+    if (!own.has(m[1]) || /[\w$.]/.test(src[m.index - 1] || "")) continue;
+    const end = groupEnd(src, computed.lastIndex - 1);
+    if (end > 0 && new RegExp("^\\s*" + ASSIGN_OP).test(src.slice(end, end + 8))) none.add(m[1]);
+  }
+  const assign = /\bObject\s*\.\s*assign\s*\(\s*([A-Za-z_$][\w$]*)/g;
+  while ((m = assign.exec(src))) none.add(m[1]);
+  const deep = new Map();
+  for (const [name, keys] of good) {
+    if (none.has(name)) continue;
+    const no = bad.get(name) || new Set();
+    deep.set(name, new Set(Array.from(keys).filter((k) => !no.has(k))));
+  }
+  return deep;
 }
 
 function startRun(id, opts) {
@@ -1136,6 +1275,7 @@ function startRun(id, opts) {
     id, agent: opts.agent || null, readOnly: !!opts.readOnly, quiet: false,
     mayWriteVariables: writes.variables,
     mayWrite: writes.any,
+    why: writes.why || null,  // what in the code may write, for the -R rollback's message
     created: new Set(), createdNodes: new Map(), deleted: new Set(), changed: new Set(),
     styles: 0, props: {}, items: new Map(), itemsTotal: 0, remote: 0,
     overlap: RUNS.size > 0 || opts.shared === true, settled: null, late: false,
@@ -1391,7 +1531,8 @@ async function finishRun(run) {
           "roll that back " + FOREIGN_UNDO;
       } else {
         out.fields.rolledBack = true;
-        out.error = "read-only: the script changed " + own + " — rolled back" + leftNote(back, trace);
+        out.error = "read-only: the script changed " + own + " — rolled back" + leftNote(back, trace) +
+          (run.why ? whyNote(run.why) : "");
       }
     }
   }
@@ -1895,6 +2036,15 @@ async function revertSteps(run, trace) {
   }
 }
 
+// Why the -R rollback took what changed for the script's: Figma reports every
+// change without saying who made it, and the instances it updates on a page a
+// script loads for the first time come as the script's when its code may write.
+function whyNote(why) {
+  return ". The code may write (" + why + "), so every change made while it ran counted as its own, " +
+    "Figma's updates on a page loaded for the first time too. If it only reads, keep what it gathers " +
+    "in variables of its own and run it again";
+}
+
 function leftNote(back, trace) {
   if (back.left > 0) {
     return "; not everything was undone: " + back.left + " layers of this script are left — look at " +
@@ -2274,6 +2424,14 @@ function shotScale(node) {
   return Math.floor((SHOT_MAX_W / w) * 100) / 100;
 }
 
+// The layer itself, or the nearest one above it on the page, when it is hidden; else null.
+function hiddenBy(node) {
+  for (let n = node; n && n.type !== "PAGE" && n.type !== "DOCUMENT"; n = n.parent) {
+    if (n.visible === false) return n;
+  }
+  return null;
+}
+
 async function shotOf(node, opts) {
   if (!node || typeof node.exportAsync !== "function") {
     throw new Error("h.shot: " + (node ? node.type + " \"" + node.name + "\"" : "no node") +
@@ -2301,9 +2459,13 @@ async function shotOf(node, opts) {
   // absolute bounds give exactly its own size (for a picture reused inside a mockup).
   if (opts.absolute) settings.useAbsoluteBounds = true;
   const bytes = await node.exportAsync(settings);
+  // Figma draws nothing for a hidden layer, nor for one inside a hidden layer: the PNG is 1×1
+  // and empty. The CLI says so (cli_extras.save_shots), and names the layer that hides it.
+  const hider = hiddenBy(node);
   return {
     kind: "shot", id: node.id, name: node.name, type: node.type,
     file: figma.root.name, fileKey: fileKey() || undefined, url: nodeLink(node.id),
+    hidden: hider ? (hider === node ? true : { id: hider.id, name: hider.name }) : undefined,
     format, scale, width: opts.width ? Number(opts.width) : undefined,
     w: Math.round(node.width), h: Math.round(node.height),
     size: bytes.length, data: figma.base64Encode(bytes),

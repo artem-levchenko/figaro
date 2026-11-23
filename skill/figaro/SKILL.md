@@ -130,7 +130,10 @@ JS
   first time, the user at work — isn't the script's, and nothing is rolled back; a `⚠` line names what
   came while the script ran. A script like that answers as soon as it ends and doesn't wait for Figma's
   report; what Figma updates right after it is not reported at all.
-  Importing by key (`h.importComp`, `h.importVar`, `import…ByKeyAsync`) counts as reading.
+  Importing by key (`h.importComp`, `h.importVar`, `import…ByKeyAsync`) counts as reading. Code counts as
+  reading when it sets only slots of objects and arrays it made itself (`counts[n.type] = …`,
+  `out.types[n.type] = …` after `const out = { types: {} }`); a `-R` rollback quotes what made the code look
+  like it writes.
 - `--shot` — a picture right after the script, in the same call, so you don't spend a step on `figaro shot`:
   of the layer whose id the script returned (`return { id }`), or else of the first layer it created;
   `--shot <layer>` — of that layer. A script that fixes an existing layer creates nothing: return its id or

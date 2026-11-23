@@ -329,6 +329,12 @@ const kit = () => ({
     }
     r = await exec(env, "return await h.shot('2:2', {format: 'gif'})");
     check("an unknown format", [r.type, /png, jpg, svg/.test(r.text)], ["error", true]);
+    // Figma exports a hidden layer, and one inside a hidden layer, as an empty 1×1 picture (#11).
+    env.build({ id: "2:5", name: "Drawer", type: "FRAME", width: 300, height: 600, visible: false,
+                children: [{ id: "2:6", name: "Menu", type: "FRAME", width: 300, height: 40 }] });
+    r = await exec(env, "return [await h.shot('2:5'), await h.shot('2:6'), await h.shot('2:2')]");
+    check("a hidden layer says so, and one in a hidden layer names it", r.value.map((s) => s.hidden),
+      [true, { id: "2:5", name: "Drawer" }, undefined]);
   }
 
   // ─── fonts ──────────────────────────────────────────────────────────────

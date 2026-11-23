@@ -578,7 +578,25 @@ def save_shots(shots, out_dir=None, tile=TILE):
             lines.append(line)
         if why:
             lines.append(f"  ⚠ {why}")
+        empty = empty_shot(s, parts[0][1])
+        if empty:
+            lines.append(f"  ⚠ {empty}")
     return lines
+
+
+def empty_shot(s, size):
+    """Why the picture shows nothing, or None. Figma exports a hidden layer, a layer inside a
+    hidden one and a layer with nothing to draw as an empty 1×1 picture, and says nothing."""
+    hidden = s.get("hidden")
+    if hidden and size in (None, (1, 1)):
+        where = ("it is hidden" if hidden is True else
+                 f'"{hidden.get("name")}" {hidden.get("id")}, a layer above it, is hidden')
+        return (f"the picture is empty: {where}, and Figma draws nothing for a hidden layer. To see it, "
+                "show it in a script (visible = true), shoot, and hide it again")
+    if size == (1, 1):
+        return ("the picture is 1×1: the layer has nothing Figma can draw (no width or height, or "
+                "nothing visible in it)")
+    return None
 
 
 def split_image(data, ext, tile):

@@ -18,6 +18,7 @@ Read the `hint:` in the answer first: the bridge knows most of the cases below.
 | `Figma isn't answering in "…"` (from `figaro wait`; the file is red in the plugin's window) | a script there runs on long past its time, or the plugin's window closed while one ran | tell the user in your first line: reload the file in Figma (close its tab and open it again, or quit Figma if the tab won't close), then run Figaro in it. Don't retry until `figaro wait` says it is ready |
 | `the loop on line N was still running when --timeout ran out — the script was stopped` | a `while` or `for (;;)` loop never ended: its condition stayed true | the file is free. What the script changed before stays: look at it, or `figaro undo`. Fix the condition, so that what it tests changes each time round |
 | `figma.…() did not answer before --timeout ran out — the script was stopped` | Figma never answered the call on the line it names | the file is free, but don't repeat that call. It happens with `figma.teamLibrary` and import by key — take what the file already has by id from `figaro inspect` |
+| `--timeout ran out while the script waited for figma.…()`, `of the 181 s it ran, its calls to Figma took …` | many calls that each answered used the time up; the line named is only the one that ran last | the file is free. Split the work into scripts of a few dozen calls each, or give a longer `--timeout`. An import by key takes seconds (41 components and 27 styles took 181 s): import each one once, and take what the file already has by id |
 | `plugin disconnected mid-request` | the plugin restarted (Figma restarted it after a code change, or the user closed its window) | check what the script managed to do (`inspect`) and run it again; `undo` remembers nothing from before a restart |
 | `⚠ … runs an older build — figaro reload` | Figma runs old plugin code | `figaro reload -T <file>`; if that fails, ask the user to press Reload in the plugin's window or to restart the plugin |
 | `⚠ Figaro X is released (this is Y) — tell the user` | a new release is out, and the user hasn't skipped it in the window | tell the user once, in your report. Don't update Figaro yourself unless they ask: the window's Update waits until no agent's script runs |
@@ -110,6 +111,8 @@ order. If you write it by hand:
   them are frozen: copy the array (`JSON.parse(JSON.stringify(node.fills))`), change it and assign it whole.
   To bind — `h.bF`/`h.bS`.
 - **`setBoundVariableForPaint` returns a new paint** — it has to be assigned; `h.bF` does that itself.
+  Its opacity is reset: bound by hand to an opaque colour, a fill at 10% comes out at 100%. `h.bF` and `h.bS`
+  keep the paint's opacity; by hand, set `opacity` on the new paint again.
 - **Empty `fills`** — nothing to bind: first `node.fills = h.solid("#000")`, then `h.bF(node, 0, v)`.
 - **A fill's opacity** lives in `paint.opacity`, not in the variable's colour: don't lose it when you
   overwrite the fill.
@@ -236,6 +239,12 @@ order. If you write it by hand:
 - **`undone: … (3 Cmd+Z steps)`** — Figma recorded the script as several steps, and all of them were undone.
   `⚠ not everything was undone` — look at what is left and tell the user.
 - **Figma has one Cmd+Z for the whole file**: it undoes the last step, whoever made it.
+- **`read-only: the script changed N — rolled back. The code may write (…)`** — Figma doesn't say who made a
+  change, so while code that may write runs, every change counts as the script's: Figma's own updates of a
+  page loaded for the first time too. The quote is what made the code look like it writes. If the script
+  only reads, rewrite that part and run it again: gather results in objects and arrays of the script's own
+  (`const out = { types: {} }; out.types[n.type] = …` is fine), not in an object a function got as a
+  parameter or one that may hold a layer.
 - **`⚠ N changed in the file while the script ran … not by the script`** — the code only reads, so Figma or
   someone in the file made those changes, and nothing was rolled back. In a large file Figma updates
   instances on a page the first time a script loads it; the same script once more gives a clean answer.
@@ -245,6 +254,9 @@ order. If you write it by hand:
 ## Pictures
 
 - **`shot` captures what Figma shows**: a layer that sticks out of a frame with `clipsContent` comes out cut.
+- **A hidden layer, or one inside a hidden layer, comes out as an empty 1×1 picture**, and so does a layer
+  with nothing to draw (no width or height). The CLI warns: `⚠ the picture is empty: it is hidden`. To see
+  it, show it in a script (`visible = true`), shoot, and hide it again.
 - **A picture takes in what sticks out of the layer**: a shadow, an outside stroke, the children of a frame
   that doesn't clip. A 200×100 card with a shadow comes out 248×148, and a text layer is cut to its letters
   (a 300×40 box holding "Hi" gives 10×9). `--absolute` (`h.shot(node, {absolute: true})`) gives exactly the

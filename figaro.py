@@ -853,9 +853,44 @@ def _add_common_flags(p):
                     help="skip the hourly checkpoint for this script")
 
 
+class Parser(argparse.ArgumentParser):
+    """argparse's parser, but a command's error names the flag it doesn't know. `exec -o out.json
+    --stdin` took `out.json` for the script and said "argument --stdin: not allowed with argument
+    code", which sent the agent looking at --stdin."""
+
+    def error(self, message):
+        name = self.prog.split()[-1]
+        args = sys.argv[1:]
+        if " " in self.prog and name in args:
+            unknown = unknown_flags(self, args[args.index(name) + 1:])
+            if unknown:
+                message = f"unknown flag {unknown[0]} — `figaro {name} -h` lists the flags there are"
+        super().error(message)
+
+
+def unknown_flags(parser, tokens):
+    """The tokens that look like flags and that the parser has no flag for, nor one they begin
+    (argparse takes `--time` for `--timeout`)."""
+    known = parser._option_string_actions
+    out = []
+    for t in tokens:
+        if t == "--":
+            break
+        if not t.startswith("-") or t == "-" or t[1:].replace(".", "", 1).isdigit():
+            continue
+        if t.startswith("--"):
+            flag = t.split("=", 1)[0]
+            if any(k.startswith(flag) for k in known if k.startswith("--")):
+                continue
+        elif t[:2] in known:
+            continue
+        out.append(t)
+    return out
+
+
 def build_parser():
-    ap = argparse.ArgumentParser(prog="figaro", description=__doc__.splitlines()[0],
-                                  formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = Parser(prog="figaro", description=__doc__.splitlines()[0],
+                formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--host", default=DEFAULT_HOST,
                     help="bridge host (env FIGARO_HOST)")
     ap.add_argument("--port", type=int, default=DEFAULT_PORT,

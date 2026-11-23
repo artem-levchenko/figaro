@@ -9,6 +9,32 @@ file; the release notes say when it has to be imported again.
 
 ## [Unreleased]
 
+### Fixed
+
+- **A `-R` scan that gathers its results in nested objects of its own no longer counts as one that may write**
+  (#11). `const out = { types: {} }; out.types[n.type] = …` made Figaro take the code for a writer, so the
+  instances Figma updates on a page loaded for the first time came as the script's, and `-R` rolled them back
+  and failed. Now a slot one level down counts as the script's own too, through a key that only ever holds
+  its own objects and arrays. When a `-R` script is rolled back, the error quotes what made its code look like
+  it writes (`` `acc.count++` ``, `` `n.resize()` ``), so an agent whose script only reads knows what to change.
+- **`h.bF` and `h.bS` keep the paint's opacity** (#11). Figma's `setBoundVariableForPaint` resets it, so a fill
+  at 10% bound to an opaque colour came out at 100%.
+- **A picture of a hidden layer says that it is empty** (#11). Figma exports a hidden layer, a layer inside a
+  hidden one and a layer with nothing to draw as a 1×1 picture, and `figaro shot` and `exec --shot` saved it
+  without a word. Now they warn, and name the hidden layer above when it is a parent that hides it. `h.shot`
+  returns `hidden`.
+- **A flag `figaro exec` doesn't know is named** (#11). `exec --stdin -o out.json` took `out.json` for the
+  script and said "argument code: not allowed with argument --stdin"; now it says "unknown flag -o".
+
+### Changed
+
+- **A script stopped at `--timeout` says where its time went** (#11). 68 imports by key (41 components and
+  27 styles) took three minutes, and the error named the import that was running at the end, with a hint that Figma
+  never answered it. Now, when many calls that each answered used the time up, the error says
+  "--timeout ran out while the script waited for figma.importComponentByKeyAsync()" and adds "of the 181 s it
+  ran, its calls to Figma took 178 s: figma.importComponentByKeyAsync() ×41, 150 s; …", and the hint says to
+  split the work into several scripts. A call that never answered is told as before.
+
 ## [1.11.0] — 2026-11-11
 
 ### Added
