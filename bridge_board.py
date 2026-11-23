@@ -392,7 +392,7 @@ def stop(doc, agent=None):
     `agent`, for every script running there.
 
     A running script ends now: h.ck() and every Figma call fail in it, and the
-    bridge answers its agent with a 409 (bridge._reply). An agent between its
+    bridge answers its agent with a 409 (bridge._reply_body). An agent between its
     scripts, or with one waiting in the queue, gets the 409 for its next
     script there instead (refusal)."""
     now = time.time()

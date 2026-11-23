@@ -193,7 +193,7 @@ def test_the_cli_sends_the_token_from_the_file(monkeypatch, tmp_path):
     monkeypatch.setenv("FIGARO_TOKEN_FILE", str(f))
     seen = []
 
-    def fetch(host, port, method, path, body=None, headers=None, timeout=None, limit=None):
+    def fetch(host, port, method, path, body=None, headers=None, timeout=None, limit=None, on_logs=None):
         if path == "/":  # the look at the port, which carries nothing
             assert not headers
             return 200, b'{"service": "figaro-bridge"}'

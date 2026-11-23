@@ -151,7 +151,12 @@ Then read `run.jsonl` (commands, errors, the final report) and clean up what it 
   leaves out `result` when it only repeats `value` as text (a text the plugin sent itself, as for a script
   with no `return`, stays). The CLI sends it where it prints the text itself, never with `--raw`, and makes
   the text with `result_text.render`; an older bridge ignores the field and sends `result`, which the CLI
-  then prints. Keep both ways working.
+  then prints. Keep both ways working. `stream` is the request's own too: once the script's first `print()`
+  lines come, the reply turns into NDJSON (`bridge.Live`: a `{"logs": [...]}` line per batch the plugin
+  flushes, then the whole reply with its HTTP status in `status`); a caller that hangs up mid-stream leaves
+  the script waited for and the file locked, as without it. `figaro exec` sends it unless `--raw`, prints the
+  lines as they come (`cli_extras.streamed`) and leaves them out of the reply's `logs`; from an older bridge
+  it gets plain JSON and prints them at the end.
 - `bridge_comments.py` — Figma comments and the designer's Figma token. The token is in `figma-token` next to
   the API token (`figaro_token.figma_token_path`, mode 0600): never in `settings.json`, the board, a log or a
   reply — the board's `figma` has only its masked form and how a check goes. The window's Save sends it

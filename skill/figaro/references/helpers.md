@@ -16,7 +16,9 @@ A `figaro exec` script runs as the body of an async function with the parameters
   A `while`, `do … while` or `for (;;)` loop ends at the deadline too: "the loop on line N was still running when --timeout ran out". Node methods
   (`getMainComponentAsync`, `exportAsync`, `setTextStyleIdAsync`…), the other helpers and `for … of` loops
   don't know the deadline — call `h.ck()` in a long `for … of` loop.
-- **`print(...)`** — lines in the answer's `logs`; the CLI prints them as `log: …`.
+- **`print(...)`** — lines in the answer's `logs`; `figaro exec` prints them as `log: …` while the script
+  runs (with `--raw`, in the JSON at the end). They go out when the script awaits something, such as a Figma
+  call: a loop that never awaits sends them when it ends.
 - **`return`** — the result: a string, a number or JSON. Return ids, names and numbers. A Figma node does not
   turn into JSON.
 - **`lib`** — the functions of the `--lib` files (`{}` without them). A file's top-level `function`, `class`,

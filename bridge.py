@@ -4,6 +4,7 @@
 HTTP API (clients like curl / figaro CLI talk here):
     POST /exec     {"code": "...", "timeout": 60} -> {ok, result, value, logs, elapsed_ms}
                    "value_only": true leaves `result` out when it only repeats `value` as text
+                   "stream": true sends print() lines as they come (NDJSON, see Live)
     GET  /status                                  -> {plugin_connected, pending}
 
 WebSocket (the Figma plugin connects here once it's opened in Figma Desktop):
@@ -691,6 +692,8 @@ async def plugin_ws_handler(request: web.Request):
             if mtype == "log":
                 if isinstance(m.get("lines"), list):
                     entry["logs"].extend(str(x) for x in m["lines"])
+                    if entry.get("logged") is not None:  # a caller that takes them live (Live)
+                        entry["logged"].set()
             elif mtype in ("result", "error"):
                 # Remember the script ended even if nobody is waiting any more:
                 # the timeout may have cancelled the future a moment ago, and the
@@ -853,6 +856,7 @@ async def exec_handler(request: web.Request) -> web.Response:
     if opts.images and "images" not in (info.get("caps") or []):
         return bad("the plugin in this file is an older build and would drop the picture — "
                    "run `figaro reload` first")
+    live = Live(request) if opts.stream else None
 
     # Reads are safe to fan out; anything that mutates must take the file's lock.
     # So a parallel script is read-only — the plugin rolls back its changes.
@@ -867,13 +871,13 @@ async def exec_handler(request: web.Request) -> web.Response:
             bridge_board.started(_doc_key(conn_id), agent, read=True)
         return await _dispatch(target_ws, conn_id, code, timeout, force, board=not probe,
                                fields=bridge_exec.exec_fields(conn_id, agent, opts, parallel=True),
-                               value_only=opts.value_only)
+                               value_only=opts.value_only, live=live)
 
     # The fields are made inside the lock, where the checkpoint is decided.
     return await _queued(request, conn_id, agent, queue_timeout, lambda meta: _dispatch(
         target_ws, conn_id, code, timeout, force, meta=meta, board=not probe,
-        fields=bridge_exec.exec_fields(conn_id, agent, opts), value_only=opts.value_only),
-        script=not probe, read=opts.read_only)
+        fields=bridge_exec.exec_fields(conn_id, agent, opts), value_only=opts.value_only,
+        live=live), script=not probe, read=opts.read_only)
 
 
 async def _queued(request, conn_id, agent, queue_timeout, dispatch, script=True, read=False):
@@ -1024,13 +1028,15 @@ def _abandon(rid, conn_id, timeout, target_ws):
 
 
 async def _dispatch(target_ws, conn_id, code, timeout, force, meta=None,
-                    fields=None, mtype="exec", board=True, value_only=False) -> web.Response:
+                    fields=None, mtype="exec", board=True, value_only=False,
+                    live=None) -> web.StreamResponse:
     """Send one exec to a plugin and await its reply. Caller holds the lock.
 
     `fields` ride along in the message (agent, readOnly, checkpoint), and
     `mtype` "undo" sends an undo the same way. `board`: False for figaro
     doctor's checks, which the plugin's window doesn't show. `value_only`
-    shapes the reply only (see _reply): it never goes to the plugin.
+    shapes the reply only (see _reply_body): it never goes to the plugin, and nor
+    does `live`, a Live that hands the caller the print() lines as they come.
     """
     # Per document, not per connection: a timed-out script in one tab still
     # runs in the document a caller routed through another tab would write to.
@@ -1091,7 +1097,10 @@ async def _dispatch(target_ws, conn_id, code, timeout, force, meta=None,
 
         try:
             # A moment past the deadline: the plugin ends a stuck Figma call itself
-            result = await asyncio.wait_for(fut, timeout=timeout + bridge_exec.GATE_GRACE)
+            if live is None:
+                result = await asyncio.wait_for(fut, timeout=timeout + bridge_exec.GATE_GRACE)
+            else:
+                result = await live.wait(fut, PENDING[rid], timeout + bridge_exec.GATE_GRACE)
         except asyncio.CancelledError:
             # Client vanished mid-request (aiohttp cancels the handler). If the
             # script is still running, the file stays interlocked until it ends;
@@ -1105,7 +1114,7 @@ async def _dispatch(target_ws, conn_id, code, timeout, force, meta=None,
             entry = PENDING.get(rid, {})
             _abandon(rid, conn_id, timeout, target_ws)
             bridge_board.timed_out(entry, mtype, fields, timeout)
-            return web.json_response({
+            return await Live.answer(live, {
                 "ok": False,
                 "error": f"timeout after {timeout:.0f}s",
                 "warning": ("the script was NOT cancelled — it may still be running and "
@@ -1113,10 +1122,10 @@ async def _dispatch(target_ws, conn_id, code, timeout, force, meta=None,
                             "not rolled back. Re-read the nodes before trusting them."),
                 "rid": rid[:8],
                 "logs": list(entry.get("logs", [])),
-            }, status=504)
+            }, 504)
 
         bridge_board.finished(PENDING[rid], mtype, fields, result)
-        return _reply(PENDING[rid], result, meta)
+        return await Live.answer(live, *_reply_body(PENDING[rid], result, meta))
     finally:
         # Always reap, including on client disconnect / task cancellation —
         # otherwise /status `pending` inflates permanently.
@@ -1133,7 +1142,8 @@ def _result_text(result) -> str:
     return result_text.render(result.get("value"))
 
 
-def _reply(entry, result, meta=None) -> web.Response:
+def _reply_body(entry, result, meta=None):
+    """The reply to a script that ended: its body and its HTTP status."""
     elapsed_ms = int((time.time() - entry["t0"]) * 1000)
 
     if entry.get("stopped"):
@@ -1173,7 +1183,76 @@ def _reply(entry, result, meta=None) -> web.Response:
         for key in ("line", "col", "source", "lib"):  # where the Stop caught it, not a bug
             body.pop(key, None)
     body.update(meta or {})
-    return web.json_response(body, status=status)
+    return body, status
+
+
+NDJSON = "application/x-ndjson"
+
+
+class Live:
+    """An exec's print() lines, handed to its caller as the script prints them
+    (`"stream": true`, which `figaro exec` sends).
+
+    The plugin sends the lines in batches (every 100 ms or 200 lines) while the
+    script runs. Until the first batch comes, nothing is sent; then the reply
+    turns into NDJSON: a `{"logs": [...]}` line per batch, and last the whole
+    reply, `logs` and all, with the HTTP status it would have had in `status`.
+    A script that prints nothing, or prints only as it ends, gets the plain JSON
+    reply. A caller that hangs up mid-stream changes nothing: the script is
+    waited for all the same, so the file's lock stays with it.
+    """
+
+    def __init__(self, request):
+        self.request = request
+        self.resp = None   # the StreamResponse, once a line has gone
+        self.sent = 0      # lines already sent
+        self.gone = False  # a write failed: the caller left
+
+    async def wait(self, fut, entry, timeout):
+        """fut's result, sending each batch of lines as it comes; asyncio.TimeoutError
+        after `timeout` seconds. fut itself is never cancelled."""
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + timeout
+        logged = entry["logged"] = asyncio.Event()
+        while not fut.done():
+            left = deadline - loop.time()
+            if left <= 0:
+                raise asyncio.TimeoutError
+            ping = asyncio.ensure_future(logged.wait())
+            try:
+                await asyncio.wait({fut, ping}, timeout=left, return_when=asyncio.FIRST_COMPLETED)
+            finally:
+                ping.cancel()
+            logged.clear()
+            if not fut.done():
+                await self._send({"logs": entry["logs"][self.sent:]})
+        return fut.result()
+
+    async def _send(self, line):
+        if self.gone or ("logs" in line and not line["logs"]):
+            return
+        try:
+            if self.resp is None:
+                self.resp = web.StreamResponse(headers={"Content-Type": NDJSON})
+                await self.resp.prepare(self.request)
+            await self.resp.write(json.dumps(line).encode("utf-8") + b"\n")
+            self.sent += len(line.get("logs") or ())
+        except Exception as e:  # the caller hung up, or a closing transport
+            self.gone = True
+            print(f"[exec] caller left mid-stream ({type(e).__name__}): the script runs on")
+
+    @staticmethod
+    async def answer(live, body, status):
+        """The reply: plain JSON, or the stream's last line once one has begun."""
+        if live is None or live.resp is None:
+            return web.json_response(body, status=status)
+        await live._send(dict(body, status=status))
+        if not live.gone:
+            try:
+                await live.resp.write_eof()
+            except Exception:
+                pass
+        return live.resp
 
 
 def _version_notice(info):
@@ -1282,9 +1361,11 @@ async def root_handler(request: web.Request) -> web.Response:
         "version": VERSION,
         "endpoints": {
             "POST /exec": ("{code, target?, agent?, timeout?, queue_timeout?, parallel?, force?, "
-                           "read_only?, checkpoint?, quick?, libs?, images?, probe?, value_only?} -> "
+                           "read_only?, checkpoint?, quick?, libs?, images?, probe?, value_only?, stream?} -> "
                            "{ok, result, value, logs, elapsed_ms}; value_only:true leaves `result` "
-                           "out when it only repeats `value` as text. Serialized per file "
+                           "out when it only repeats `value` as text; stream:true turns the reply "
+                           "into NDJSON once the script prints: {logs} lines as they come, then the "
+                           "reply with its status. Serialized per file "
                            "unless parallel:true (reads only)."),
             "GET /status": "{plugin_connected, files, pending, abandoned, lost}",
             "GET /targets": "{files: [{name, fileKey, conn}]}",

@@ -142,7 +142,7 @@ def node_expr(id_or_alias):
     return f"await h.resolve({json.dumps(id_or_alias)})"
 
 
-def _request(method, path, payload=None, timeout=65):
+def _request(method, path, payload=None, timeout=65, on_logs=None):
     import http.client  # here, not at the top: `-h` and a wrong flag never ask the bridge
     # The token goes only to what said it is the bridge (one `GET /` per process): any other
     # program on the port would get a secret that runs code in the user's Figma file.
@@ -160,12 +160,13 @@ def _request(method, path, payload=None, timeout=65):
     if token:  # read each time: a restarted bridge has a new one
         headers["X-Figaro-Token"] = token
     try:
-        status, body = cli_extras.fetch(HOST, PORT, method, path, data, headers, timeout)
+        status, body = cli_extras.fetch(HOST, PORT, method, path, data, headers, timeout,
+                                        on_logs=on_logs)
     except cli_extras.Unreached as e:
         cli_extras.forget(HOST, PORT)
         # Nothing listens — start our bridge once and ask again.
         if isinstance(e.reason, ConnectionRefusedError) and cli_extras.autostart(HOST, PORT):
-            return _request(method, path, payload, timeout)
+            return _request(method, path, payload, timeout, on_logs)
         if isinstance(e.reason, (TimeoutError, socket.timeout)):
             return 0, {"ok": False, "error": "request timed out"}
         resp = {"ok": False, "error": f"connection: {e.reason}"}
@@ -182,7 +183,7 @@ def _request(method, path, payload=None, timeout=65):
     # bridge started since (another call did it). Look again and ask with the token.
     if (status == 401 and found["state"] == "none"
             and cli_extras.probe(HOST, PORT, fresh=True)["state"] == "ours"):
-        return _request(method, path, payload, timeout)
+        return _request(method, path, payload, timeout, on_logs)
     return status, _answer(body, status)
 
 
@@ -199,7 +200,9 @@ def _answer(body, status):
 
 
 def _exec(code, timeout=60, read_only=False, quick=False, libs=None, probe=False, images=None,
-          print_result=False):
+          print_result=False, live=False):
+    """POST /exec. `live`: print the script's print() lines as it prints them, and leave them
+    out of the reply's `logs` (an older bridge sends them all at the end, and _emit prints them)."""
     payload = {"code": code, "timeout": timeout}
     if TARGET:
         payload["target"] = TARGET
@@ -226,7 +229,19 @@ def _exec(code, timeout=60, read_only=False, quick=False, libs=None, probe=False
     # The socket deadline has to outlast the bridge's own: time in the file's
     # queue plus the run itself. Hanging up earlier loses the bridge's error
     # payload, and used to leave a queued script to run with nobody waiting.
-    status, resp = _request("POST", "/exec", payload, timeout=queue + timeout + 5)
+    shown = []
+    kw = {}
+    if live:
+        payload["stream"] = True
+
+        def show(lines):
+            for line in lines:
+                _log_line(line)
+            shown.extend(lines)
+        kw["on_logs"] = show
+    status, resp = _request("POST", "/exec", payload, timeout=queue + timeout + 5, **kw)
+    if shown and isinstance(resp.get("logs"), list):
+        resp["logs"] = resp["logs"][len(shown):]  # the reply has them all; these were printed
     if resp.get("queued_ms", 0) >= 1000:
         print(f"  (waited {resp['queued_ms'] / 1000:.1f}s in the file's queue)", file=sys.stderr)
     if print_result and resp.get("ok") and "result" not in resp:
@@ -242,13 +257,17 @@ def _run(args, code, **kwargs):
     return _emit(_exec(code, args.timeout, print_result=not args.raw, **kwargs)[1], raw=args.raw)
 
 
+def _log_line(line):
+    print(f"  log: {line}", file=sys.stderr, flush=True)
+
+
 def _emit(resp, raw=False):
     if raw:
         print(json.dumps(resp, indent=2, ensure_ascii=False))
         return 0 if resp.get("ok") else 1
 
     for line in resp.get("logs") or []:
-        print(f"  log: {line}", file=sys.stderr)
+        _log_line(line)
     if resp.get("notice"):
         print(f"   ⚠ {resp['notice']}", file=sys.stderr)
     for line in _change_lines(resp):
@@ -673,10 +692,12 @@ def cmd_exec(args):
         return 2
     libs = cli_extras.read_libs(args.lib)
     images = cli_extras.read_images(args.image)
-    text = not args.raw  # --raw prints the whole reply, `result` included: the bridge sends it
-    resp = _exec(code, args.timeout, libs=libs, images=images, print_result=text)[1]
+    # --raw prints the whole reply, `result` and `logs` included: the bridge sends it at the end.
+    # Otherwise print() lines show as the script prints them.
+    text = not args.raw
+    resp = _exec(code, args.timeout, libs=libs, images=images, print_result=text, live=text)[1]
     if resp.get("lib_missing"):  # the plugin lost a --lib before the script ran; now the code goes
-        resp = _exec(code, args.timeout, libs=libs, images=images, print_result=text)[1]
+        resp = _exec(code, args.timeout, libs=libs, images=images, print_result=text, live=text)[1]
     rc = _emit(resp, raw=args.raw)
     if rc == 0 and args.shot is not None:
         rc = cli_extras.shot_after(args, resp)

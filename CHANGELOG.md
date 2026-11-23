@@ -9,6 +9,15 @@ file; the release notes say when it has to be imported again.
 
 ## [Unreleased]
 
+### Added
+
+- **`figaro exec` shows a script's `print()` lines as it prints them** (#11). Until now they all came at the
+  end, so a long script said nothing until it ended or ran out of time. Now each `log:` line shows while the
+  script runs, and a script can tell how far it got. `--raw` still gives the whole JSON at the end. The bridge
+  streams the lines to a caller that sends `"stream": true` (NDJSON: a `{"logs": [...]}` line per batch, then
+  the reply with its `status`); a script that prints nothing gets the plain reply, and an older bridge sends
+  the lines at the end, as before.
+
 ### Fixed
 
 - **A `-R` scan that gathers its results in nested objects of its own no longer counts as one that may write**

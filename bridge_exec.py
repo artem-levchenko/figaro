@@ -1,7 +1,9 @@
 """The bridge's side of exec: change reports, read-only, checkpoints, undo.
 
-    POST /exec    {..., read_only?, checkpoint?, quick?, libs?, images?, value_only?}
+    POST /exec    {..., read_only?, checkpoint?, quick?, libs?, images?, value_only?, stream?}
                   -> {..., changes?, line?, source?, lib?, lib_missing?, rolled_back?, checkpoint?}
+                  stream: once the script prints, NDJSON — {"logs": [...]} lines, then the
+                  reply with its "status" (bridge.Live)
     POST /undo    {target?, agent?, force?}      -> revert the file's last script
     POST /reload  {target?}                      -> run plugin/code.js from disk in
                                                     the open plugin, no re-Run needed
@@ -55,6 +57,8 @@ class Options(NamedTuple):
     images: tuple = ()             # [{"name", "data"}] — files for `figaro image`, `exec --image`
     value_only: bool = False       # no `result` in the reply when `value` says it: the client
                                    # renders the text (result_text.render); the plugin never sees this
+    stream: bool = False           # print() lines go to the caller as they come (bridge.Live);
+                                   # the plugin never sees this either
 
 
 IMAGES_MAX = 20            # files in one request
@@ -84,8 +88,11 @@ def exec_options(body):
     value_only = body.get("value_only", False)
     if not isinstance(value_only, bool):
         raise ValueError("'value_only' must be true or false")
+    stream = body.get("stream", False)
+    if not isinstance(stream, bool):
+        raise ValueError("'stream' must be true or false")
     return Options(read_only or quick, checkpoint, quick, _libs(body.get("libs")),
-                   _images(body.get("images")), value_only)
+                   _images(body.get("images")), value_only, stream)
 
 
 def _libs(value):

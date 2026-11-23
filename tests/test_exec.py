@@ -107,12 +107,14 @@ def test_exec_options():
     assert bridge_exec.exec_options({"quick": True}) == Options(True, None, True, [])
     assert bridge_exec.exec_options({}).value_only is False
     assert bridge_exec.exec_options({"value_only": True}) == Options(False, None, False, [], (), True)
+    assert bridge_exec.exec_options({}).stream is False
+    assert bridge_exec.exec_options({"stream": True}).stream is True
     libs = [{"name": "grid.js", "code": "const a = 1"}, {"code": "const b = 2"}]
     assert bridge_exec.exec_options({"libs": libs}).libs == \
         [{"name": "grid.js", "code": "const a = 1"}, {"name": "lib2", "code": "const b = 2"}]
     for bad in ({"read_only": "yes"}, {"read_only": 1}, {"checkpoint": True},
                 {"checkpoint": 5}, {"checkpoint": ["x"]}, {"quick": "yes"},
-                {"value_only": "yes"}, {"value_only": 1},
+                {"value_only": "yes"}, {"value_only": 1}, {"stream": "yes"}, {"stream": 1},
                 {"libs": "const a = 1"}, {"libs": [{"name": "x"}]}, {"libs": ["const a"]},
                 {"libs": [{"code": "x" * (bridge_exec.LIBS_SIZE + 1)}]}):
         with pytest.raises(ValueError):
@@ -527,6 +529,132 @@ def test_a_field_the_bridge_does_not_know_is_ignored():
             body = await r.json()
         await c.close()
         assert r.status == 200 and body["result"] == "[\n  1,\n  2\n]" and body["value"] == [1, 2]
+    run(go())
+
+
+# ─── stream: print() lines as the script prints them ──────────────────────
+
+class Printer(FakePlugin):
+    """A plugin whose script prints: each batch of `prints` goes as a `log` message, `gap`
+    seconds apart, as plugin/code.js flushes them, and the reply `delay` seconds after."""
+
+    def __init__(self, client, prints, gap=0.05, **kw):
+        super().__init__(client, **kw)
+        self.prints, self.gap = prints, gap
+        self.runs = []  # ("start" | "end", agent), in order
+
+    async def _answer(self, m):
+        self.runs.append(("start", m.get("agent")))
+        for lines in self.prints:
+            await asyncio.sleep(self.gap)
+            await self.ws.send_str(json.dumps({"type": "log", "id": m["id"], "lines": lines}))
+        await super()._answer(m)
+        self.runs.append(("end", m.get("agent")))
+
+
+async def lines_of(r):
+    """An NDJSON reply's lines, each with the seconds it took to come."""
+    t0, out = time.monotonic(), []
+    async for raw in r.content:
+        if raw.strip():
+            out.append((time.monotonic() - t0, json.loads(raw)))
+    return out
+
+
+def test_stream_sends_each_batch_of_lines_as_it_comes():
+    async def go():
+        c = await make_client()
+        async with Printer(c, [["one"], ["two", "three"]], delay=0.6,
+                           reply=lambda m: {"value": {"n": 3}}):
+            r = await post(c, stream=True, value_only=True)
+            assert r.status == 200 and r.headers["Content-Type"].startswith(bridge.NDJSON)
+            got = await lines_of(r)
+        await c.close()
+        (t1, first), (t2, second), (t3, last) = got
+        assert first == {"logs": ["one"]} and second == {"logs": ["two", "three"]}
+        assert t1 < 0.4 and t3 - t1 > 0.4  # the lines came while the script ran on
+        # the last line is the reply, with all the lines, as plain JSON would have it
+        assert last["status"] == 200 and last["ok"] is True and last["value"] == {"n": 3}
+        assert last["logs"] == ["one", "two", "three"] and "result" not in last
+    run(go())
+
+
+def test_stream_without_lines_is_the_plain_reply():
+    async def go():
+        c = await make_client()
+        async with Printer(c, [], reply=lambda m: {"value": [1, 2]}):
+            plain = await post(c)
+            streamed = await post(c, stream=True)
+            assert plain.status == streamed.status == 200
+            assert streamed.headers["Content-Type"].startswith("application/json")
+            assert without_times(await streamed.json()) == without_times(await plain.json())
+        await c.close()
+    run(go())
+
+
+@pytest.mark.parametrize("reply, status", [
+    ({"type": "error", "text": "boom", "stack": None, "line": 2, "source": "x()"}, 500),
+    ({"value": 1}, 200),
+], ids=["error", "ok"])
+def test_streams_last_line_carries_the_status_and_matches_the_plain_reply(reply, status):
+    async def go():
+        c = await make_client()
+        async with Printer(c, [["a"]], reply=lambda m: dict(reply), delay=0.2):
+            plain = await post(c)
+            plain_body = await plain.json()
+            r = await post(c, stream=True)
+            *_, (_, last) = await lines_of(r)
+        await c.close()
+        assert plain.status == status and r.status == 200
+        assert last.pop("status") == status
+        assert without_times(last) == without_times(plain_body)
+    run(go())
+
+
+def test_stream_times_out_with_its_lines():
+    async def go():
+        c = await make_client()
+        async with Printer(c, [["working"]], delay=5):
+            r = await c.post("/exec", json={"code": "x", "timeout": 0.3, "stream": True})
+            (_, first), (_, last) = await lines_of(r)
+            assert first == {"logs": ["working"]}
+            assert last["status"] == 504 and last["logs"] == ["working"]
+            assert "timeout after" in last["error"] and "NOT cancelled" in last["warning"]
+            assert len(bridge.ABANDONED) == 1  # interlocked, as without the stream
+        await c.close()
+    run(go())
+
+
+def test_a_caller_that_hangs_up_mid_stream_keeps_the_file_locked_until_the_script_ends():
+    async def go():
+        c = await make_client()
+        async with Printer(c, [["a"], ["b"], ["c"]], gap=0.1, delay=0.4) as p:
+            r = await post(c, stream=True, agent="anna")
+            await r.content.readline()  # the first batch has come: the script runs
+            r.close()  # and its caller goes
+            second = await post(c, agent="ben")
+            assert second.status in (200, 409), await second.text()  # waited, or found it interlocked
+            assert await until(lambda: p.runs[-1][0] == "end")
+            # ben's script never ran alongside anna's
+            assert p.runs[:2] == [("start", "anna"), ("end", "anna")]
+            assert p.runs[2:] == ([("start", "ben"), ("end", "ben")] if second.status == 200 else [])
+            assert await until(lambda: bridge.PENDING == {} and bridge.ABANDONED == {})
+        await c.close()
+    run(go())
+
+
+def test_stream_never_reaches_the_plugin_and_is_checked():
+    async def go():
+        c = await make_client()
+        async with FakePlugin(c) as p:
+            await post(c)
+            await post(c, stream=True)
+            plain, live = p.of("exec")
+            assert "stream" not in live
+            assert set(live) - {"checkpoint", "id"} == set(plain) - {"checkpoint", "id"}
+            r = await post(c, stream="yes")
+            assert r.status == 400 and "stream" in (await r.json())["error"]
+        await c.close()
     run(go())
 
 

@@ -194,11 +194,12 @@ class Unreached(Exception):
         self.reason = reason
 
 
-def fetch(host, port, method, path, body=None, headers=None, timeout=None, limit=None):
+def fetch(host, port, method, path, body=None, headers=None, timeout=None, limit=None, on_logs=None):
     """One request straight to the bridge: (status, body) for any status, the body up to `limit`
     bytes. Never through a proxy: http.client takes none from the environment, where urllib would
     send http_proxy the token and the script even for 127.0.0.1, or fail and have autostart
-    restart a bridge that is fine. And urllib on top of it loads ~10 ms of modules more."""
+    restart a bridge that is fine. And urllib on top of it loads ~10 ms of modules more.
+    `on_logs`: an exec sent with "stream" gets its print() lines as they come (bridge.Live)."""
     import http.client
     # "[::1]" as written in a URL: http.client wants it bare (3.9 can't resolve the brackets)
     conn = http.client.HTTPConnection(host.strip("[]"), port, timeout=timeout)
@@ -208,9 +209,34 @@ def fetch(host, port, method, path, body=None, headers=None, timeout=None, limit
         except OSError as e:
             raise Unreached(e)
         r = conn.getresponse()
+        if on_logs is not None and (r.getheader("Content-Type") or "").startswith(NDJSON):
+            return streamed(r, on_logs)
         return r.status, r.read(limit)
     finally:
         conn.close()
+
+
+NDJSON = "application/x-ndjson"
+
+
+def streamed(r, on_logs):
+    """The bridge's stream of an exec (bridge.Live): each `{"logs": [...]}` line goes to on_logs
+    as it comes, and the last line is the reply, with the HTTP status it stands for in `status`.
+    A stream cut short is a ConnectionError, as a bridge that hangs up is."""
+    for raw in iter(r.readline, b""):
+        try:
+            line = json.loads(raw)
+        except ValueError:
+            continue  # not ours: an empty line, say
+        if not isinstance(line, dict):
+            continue
+        if "ok" not in line:
+            if isinstance(line.get("logs"), list):
+                on_logs([str(x) for x in line["logs"]])
+            continue
+        status = line.pop("status", r.status)
+        return (status if isinstance(status, int) else r.status), json.dumps(line).encode("utf-8")
+    raise ConnectionError("the bridge's answer ended before the script did")
 
 
 def probe(host, port, fresh=False):

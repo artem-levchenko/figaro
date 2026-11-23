@@ -109,9 +109,9 @@ return { id: card.id };
 JS
 ```
 
-- A script is the body of an async function. It gets `figma`, `h` (`helpers.md`), `print(...)` (`log:` lines
-  in the answer) and `lib` (`--lib`). Its result is what `return` gives back: ids, names and numbers, not
-  nodes or whole trees.
+- A script is the body of an async function. It gets `figma`, `h` (`helpers.md`), `print(...)` (`log:` lines,
+  shown as the script prints them) and `lib` (`--lib`). Its result is what `return` gives back: ids, names and
+  numbers, not nodes or whole trees.
 - It runs in strict mode, as `--lib` files do: declare every variable (`const`, `let`). A write that can't
   happen, such as to the frozen `node.fills[0].color`, fails with an error instead of doing nothing.
 - `<<'JS'` in quotes keeps the shell away from `$` and backticks in the code. Or use `-f script.js`: when the
@@ -123,7 +123,8 @@ JS
   or answer the user until it ends. Search inside a node, never `figma.root.findAll`
   (`pitfalls.md`, "Scripts"). Bulk edits go in batches of ~25
   layers, with `h.ck()` on every step of a long `for … of` loop (`helpers.md`, "Environment"). Don't wait
-  inside a script with `setTimeout`.
+  inside a script with `setTimeout`. A script that has to run longer can `print` how far it got: the
+  `log:` lines come while it runs, and one stopped at `--timeout` still has them.
 - `-R` — the script only reads: if it changed anything, the change is rolled back and the call fails. Run
   every script that only looks with `-R`; several of them in a row can also take `--parallel` and skip the
   queue. What changes while code that only reads runs — Figma updating a page the script loaded for the

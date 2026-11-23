@@ -65,7 +65,8 @@ class FakeBridge:
         self.replies = list(replies)
         self.calls = []
 
-    def __call__(self, method, path, payload=None, timeout=65):
+    def __call__(self, method, path, payload=None, timeout=65, on_logs=None):
+        # an older bridge: it takes no "stream" and sends the lines at the end, in `logs`
         self.calls.append(payload)
         reply = self.replies.pop(0) if len(self.replies) > 1 else self.replies[0]
         body = reply(payload) if callable(reply) else reply
@@ -1799,3 +1800,79 @@ def test_exec_shot_asks_for_the_value_only_but_the_picture_read_does_not(monkeyp
     assert rc == 0 and out.startswith("5:6\n")  # the text of the script's value, made here
     first, second = calls
     assert first["value_only"] is True and "value_only" not in second and second["quick"] is True
+
+
+# ─── exec's print() lines, as the script prints them ─────────────────────
+
+def test_exec_prints_the_lines_while_the_script_runs_and_each_once(monkeypatch, capsys):
+    """A real bridge and the CLI's own HTTP call: the lines show before the script ends."""
+    from test_exec import Printer
+    printed = []
+    monkeypatch.setattr(figaro, "_log_line", lambda line: printed.append((time.monotonic(), line)))
+
+    async def go():
+        c = await make_client()
+        monkeypatch.setattr(figaro, "HOST", "127.0.0.1")
+        monkeypatch.setattr(figaro, "PORT", c.port)
+        async with Printer(c, [["one"], ["two", "three"]], delay=0.8, reply=lambda m: {"value": 7}):
+            loop = asyncio.get_running_loop()
+            resp = await loop.run_in_executor(None, lambda: figaro._exec("x", 20, live=True)[1])
+            ended = time.monotonic()
+        await c.close()
+        return resp, ended
+    resp, ended = run(go())
+    assert [line for _, line in printed] == ["one", "two", "three"]
+    assert ended - printed[0][0] > 0.5  # shown while the script ran on
+    assert resp["ok"] is True and resp["value"] == 7 and resp["logs"] == []  # _emit prints none again
+    figaro._emit(resp)
+    assert len(printed) == 3
+
+
+def test_exec_streams_unless_raw(monkeypatch, capsys):
+    reply = {"ok": True, "value": 1, "logs": ["from an older bridge"]}
+    rc, out, err, calls = cli(monkeypatch, capsys, "exec", "print(1)", bridge_reply=reply)
+    assert calls[0]["stream"] is True
+    assert err.count("log: from an older bridge") == 1  # it sends them at the end: printed then
+    rc, out, err, calls = cli(monkeypatch, capsys, "exec", "--raw", "print(1)", bridge_reply=reply)
+    assert "stream" not in calls[0] and json.loads(out)["logs"] == ["from an older bridge"]
+    for argv in (["tree", "1:2"], ["inspect", "1:2"], ["sel"]):  # built-in readers: no lines to wait for
+        calls = cli(monkeypatch, capsys, *argv, bridge_reply={"ok": True, "value": {"node": {"id": "1:2"}}})[3]
+        assert all("stream" not in c for c in calls)
+
+
+class Streams(http.server.BaseHTTPRequestHandler):
+    """A bridge that answers every POST with the bytes of `lines`, as NDJSON."""
+    lines = b""
+
+    def do_GET(self):
+        bridge_root(self)
+
+    def do_POST(self):
+        self.rfile.read(int(self.headers["Content-Length"]))
+        self.send_response(200)
+        self.send_header("Content-Type", "application/x-ndjson")
+        self.end_headers()
+        self.wfile.write(self.lines)
+
+    def log_message(self, *a):
+        pass
+
+
+@pytest.mark.parametrize("lines, status, body", [
+    (b'{"logs": ["a"]}\n\n{"logs": ["b", 2]}\n{"ok": false, "error": "boom", "logs": ["a", "b", "2"], "status": 500}\n',
+     500, {"ok": False, "error": "boom", "logs": []}),
+    (b'{"logs": ["a"]}\n{"logs": ["b"]}\n',  # cut short: the bridge went away mid-script
+     0, {"ok": False, "error": "connection: the bridge's answer ended before the script did"}),
+], ids=["ends", "cut"])
+def test_a_stream_ends_with_the_reply_or_says_it_was_cut(monkeypatch, lines, status, body):
+    handler = type("S", (Streams,), {"lines": lines})
+    port, stop = serve(handler)
+    monkeypatch.setattr(figaro, "HOST", "127.0.0.1")
+    monkeypatch.setattr(figaro, "PORT", port)
+    printed = []
+    monkeypatch.setattr(figaro, "_log_line", printed.append)
+    try:
+        got = figaro._exec("x", 5, live=True)
+    finally:
+        stop()
+    assert printed[:2] == ["a", "b"] and got == (status, body)

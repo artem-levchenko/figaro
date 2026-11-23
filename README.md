@@ -343,8 +343,8 @@ Keep it running
 
 A script is the body of an async function. It gets `figma` (the
 [Plugin API](https://www.figma.com/plugin-docs/)), `h` (Figaro's helpers),
-`print(…)` and `lib` (your own `--lib` files), and whatever it returns comes
-back to you.
+`print(…)` (its lines show while the script runs) and `lib` (your own `--lib`
+files), and whatever it returns comes back to you.
 
 ```sh
 figaro exec -T "<link to the file>" --stdin --shot <<'JS'
