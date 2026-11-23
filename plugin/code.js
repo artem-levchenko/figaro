@@ -9,7 +9,7 @@ figma.showUI(__html__, { width: UI_WIDTH, height: 70, title: "Figaro Relay", the
 // disk and asks for a re-Run when they differ, because a running plugin keeps
 // the code it started with. Bump it on every change to plugin/ —
 // tests/test_plugin_version.py fails until you do.
-const PLUGIN_VERSION = "2026-11-24.1";
+const PLUGIN_VERSION = "2026-11-24.2";
 
 // What this build can do beyond a plain exec, so the bridge knows which
 // requests it may send (an older build gets `figaro reload` first).
@@ -930,6 +930,14 @@ function whyMayWrite(code, libs) {
     return !ownSlot(target, own, deep) && !NOT_THE_FILE.test(target.replace(/\s+/g, "")) &&
       [end - target.length, quoteCode(target + (/^(?:\+\+|--)$/.test(m[2]) ? "" : " ") + m[2])];
   });
+  scan(/\bfor\s*(?:await\s*)?\(/g, (m) => {  // for (n.name of names), for ([n.x, n.y] of …)
+    const target = forTarget(src, m.index + m[0].length - 1);
+    if (!target) return null;
+    const text = target.text.trim();
+    const writes = /^[[{]/.test(text) ? MEMBER.test(text)
+      : !ownSlot(text, own, deep) && MEMBER.test(text) && !NOT_THE_FILE.test(text.replace(/\s+/g, ""));
+    return writes && [target.at, quoteCode(text + " " + target.word)];
+  });
   scan(/\}\s*=(?![=>])/g, (m) => {  // ({ a: n.name } = …)
     const start = groupStart(src, m.index);
     if (start < 0) return [m.index, quoteCode("} =")];
@@ -1236,6 +1244,24 @@ function ownValueAt(src, i) {
   return !!rest[1] && !/[.([?+\-*/%&|^<>=!`]/.test(rest[2]);
 }
 
+// The names a pattern gives values to ([a, b], { width: w, ...rest }), its keys left out; a
+// default's names too, and both names of a member (n.name), which is more than it binds: a name
+// counted here only loses being the script's own, so a write through it counts.
+function patternNames(text) {
+  return text.replace(/[A-Za-z_$][\w$]*\s*:/g, " ").match(/[A-Za-z_$][\w$]*/g) || [];
+}
+
+// What a `for … of` or `for … in` head whose `(` is at `open` gives values to, when it declares
+// nothing: { at, text, word } (out, n.name, [a, b]; word "of" or "in"), or null.
+function forTarget(src, open) {
+  const end = groupEnd(src, open);
+  if (end < 0) return null;
+  const head = src.slice(open + 1, end - 1);
+  const t = /^(\s*)([\s\S]*?)\s+(of|in)\b/.exec(head);
+  if (!t || !t[2] || t[2].includes(";") || /^(?:const|let|var)\b/.test(t[2])) return null;
+  return { at: open + 1 + t[1].length, text: t[2], word: t[3] };
+}
+
 // The names the script binds (`bound`), and those of them that only ever
 // hold objects and arrays of its own (`own`).
 function bindings(src) {
@@ -1247,12 +1273,29 @@ function bindings(src) {
   while ((m = pattern.exec(src))) {
     const open = m.index + m[0].length - 1;
     const end = groupEnd(src, open);
-    const text = src.slice(open, end < 0 ? src.length : end).replace(/[A-Za-z_$][\w$]*\s*:/g, " ");
-    for (const name of text.match(/[A-Za-z_$][\w$]*/g) || []) other.add(name);
+    for (const name of patternNames(src.slice(open, end < 0 ? src.length : end))) other.add(name);
   }
   const params = /\(([^()]*)\)\s*=>|\bfunction\b[^(]*\(([^()]*)\)|([A-Za-z_$][\w$]*)\s*=>|\bcatch\s*\(([^()]*)\)/g;
   while ((m = params.exec(src))) {
     for (const name of (m[1] || m[2] || m[3] || m[4] || "").match(/[A-Za-z_$][\w$]*/g) || []) other.add(name);
+  }
+  // A new value with no `=` of its own: for (out of …), for ([a, out] in …).
+  const loop = /\bfor\s*(?:await\s*)?\(/g;
+  while ((m = loop.exec(src))) {
+    const target = forTarget(src, loop.lastIndex - 1);
+    if (target) for (const name of patternNames(target.text)) other.add(name);
+  }
+  // …or with the `=` after a pattern: [a, out] = …, ({ k: out } = …).
+  const unpack = /[\]}]\s*=(?![=>])/g;
+  while ((m = unpack.exec(src))) {
+    const start = groupStart(src, m.index);
+    if (start < 0) continue;
+    let k = start;
+    while (k > 0 && /\s/.test(src[k - 1])) k--;
+    if (/(?:^|[^\w$])(?:const|let|var)$/.test(src.slice(Math.max(0, k - 6), k))) continue;  // above
+    if (src[start] === "[" && /[\w$)\]]/.test(src[k - 1] || "") &&
+        !KEYWORD_BEFORE.test(src.slice(Math.max(0, k - 8), k))) continue;  // x[k] = …: no pattern
+    for (const name of patternNames(src.slice(start, m.index + 1))) other.add(name);
   }
   const reset = new RegExp("([A-Za-z_$][\\w$]*)\\s*(" + ASSIGN_OP + ")", "g");  // x = …, x += …
   while ((m = reset.exec(src))) {

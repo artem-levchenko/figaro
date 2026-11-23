@@ -381,6 +381,9 @@ function check(label, actual, expected) {
       "const out = { by: {} }; for (const n of figma.currentPage.children) (out.by[n.type] ||= []).push(n.id); return out;",
       "const out = {}; out.libs = {}; out.libs.count = 1; return out;",
       "let out = { types: {} }; out = { types: {} }; out.types.FRAME = 1; return out;",
+      "const counts = { a: 1 }; let k; for (k in counts) counts[k]++; return counts;",
+      "const rows = []; let a, b; [a, b] = [1, 2]; rows[0] = a; for (const [x, y] of [[1, 2]]) rows[1] = x; return rows;",
+      "const out = { by: {} }; let n; for (n of figma.currentPage.children) out.by[n.type] = 1; return out;",
     ];
     check("a slot of its own object's own object", deepReads.map((c) => may(c)), deepReads.map(() => false));
     const deepWrites = [
@@ -394,6 +397,15 @@ function check(label, actual, expected) {
       // a whole new value later: its literal counts too (found in review)
       "let out = { types: {} };\nfor (const n of figma.currentPage.children) { out = { types: n }; out.types.name = \"x\"; }",
       "let out = { types: {} }; out = JSON.parse(\"{}\"); out.types.name = \"x\";",
+      // …and a new value with no `=` before it: a for head or a pattern (found in review)
+      "let out = {};\nfor (out of figma.currentPage.children) out.name = \"x\";",
+      "let out = { types: {} }; for await (out of figma.currentPage.children) out.types.name = \"x\";",
+      "let out = {}; [out] = figma.currentPage.children; out.name = \"x\";",
+      "let out = {}; let rest; [rest, out] = figma.currentPage.children; out.name = \"x\";",
+      "let out = {}; ({ page: out } = { page: figma.currentPage }); out.name = \"x\";",
+      "let out = {}; ({ out } = { out: figma.currentPage }); out.name = \"x\";",
+      "let out = {}; for ([, out] of Object.entries(figma.currentPage.children)) out.name = \"x\";",
+      "const n = await h.node(\"1:1\"); for (n.name of [\"a\", \"b\"]) {}",
     ];
     check("…not through a key that may hold a layer, nor a parameter", deepWrites.map((c) => may(c)),
       deepWrites.map(() => true));
@@ -412,9 +424,11 @@ function check(label, actual, expected) {
       env.api.whyMayWrite("const acc = [0]; function count(a) { a.count++; }\n" +
         "for (const n of figma.currentPage.children) { count(acc); n.name = \"x\"; }"),
       env.api.whyMayWrite("n.x = 1; n.y = 2; n.resize(1, 1); n.name = \"a\"; n.x = 3;"),
+      env.api.whyMayWrite("const n = await h.node(\"1:1\"); for (n.name of [\"a\"]) {}"),
+      env.api.whyMayWrite("let out = {};\nfor (out of figma.currentPage.children) out.name = \"x\";"),
     ], ["`out.types.name =`", "`acc.count++`", "`figma.currentPage.children[0].remove()`", "`n.resize()`",
         "`h.fill()`", "`figma.createFrame()`", "it passes h on", "`rows[…].name =`", "it runs --lib files", null,
-        "`a.count++`, `n.name =`", "`n.x =`, `n.y =`, `n.resize()`"]);
+        "`a.count++`, `n.name =`", "`n.x =`, `n.y =`, `n.resize()`", "`n.name of`", "`out.name =`"]);
   }
   {
     // A read-only script in a large file that was just opened: Figma updates

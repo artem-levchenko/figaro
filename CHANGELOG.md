@@ -27,6 +27,9 @@ file; the release notes say when it has to be imported again.
   its own objects and arrays. When a `-R` script is rolled back, the error quotes the first three places that
   made its code look like it writes, in the code's order (`` `acc.count++`, `n.name =` ``), so an agent whose
   script only reads knows what to change, and one whose script writes sees the write.
+- **A `-R` script that gives its object a new value without `=` counts as one that may write.**
+  `for (out of figma.currentPage.children) out.name = "x"`, `[out] = …` and `({ page: out } = …)` passed for
+  reading, so a rename in them was not rolled back; and so did `for (n.name of names)`.
 - **`h.bF` and `h.bS` say when binding changed a paint's opacity** (#11). On the layer, a paint bound to a
   colour variable takes the colour's alpha as its opacity, so a fill at 10% bound to an opaque colour came out
   at 100%, and the report said only `fills`. Now the helper prints
