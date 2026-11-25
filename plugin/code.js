@@ -9,12 +9,13 @@ figma.showUI(__html__, { width: UI_WIDTH, height: 70, title: "Figaro Relay", the
 // disk and asks for a re-Run when they differ, because a running plugin keeps
 // the code it started with. Bump it on every change to plugin/ —
 // tests/test_plugin_version.py fails until you do.
-const PLUGIN_VERSION = "2026-11-24.2";
+const PLUGIN_VERSION = "2026-11-25.1";
 
 // What this build can do beyond a plain exec, so the bridge knows which
 // requests it may send (an older build gets `figaro reload` first).
+// `close`: it closes when the bridge says so (the ✕ on its island in another window).
 const CAPS = ["changes", "readOnly", "undo", "reload", "checkpoint",
-                 "quick", "libs", "links", "inspect", "shot", "gate", "board", "images"];
+                 "quick", "libs", "links", "inspect", "shot", "gate", "board", "images", "close"];
 
 let keptView = null;  // the window's view (below)
 
@@ -691,6 +692,9 @@ figma.ui.onmessage = async (msg) => {
   // Undo the last script and hot reload — see below.
   if (msg.type === "undo") { await answerUndo(msg); return; }
   if (msg.type === "reload") { reloadPlugin(msg); return; }
+  // The ✕ on this file's island, in this window or another one: Figaro closes here, as at
+  // Figma's own close button. The file stays open; the window checked that no agent is at work.
+  if (msg.type === "close") { figma.closePlugin(); return; }
   if (msg.type !== "exec") return;
   const { id, code } = msg;
   // A script that may write starts only once what Figma updated after a read

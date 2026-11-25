@@ -729,7 +729,9 @@ async def plugin_ws_handler(request: web.Request):
         for rid, orphan in list(ABANDONED.items()):
             if orphan.get("conn") == conn_id:
                 ABANDONED.pop(rid, None)
-        if mid and info.get("hello") and not any(_doc_key(c) == key for c in PLUGINS):
+        # Closed at a window's ✕ is no "Figma isn't answering" (bridge_board.close_file).
+        if (mid and info.get("hello") and not bridge_board.closing(info)
+                and not any(_doc_key(c) == key for c in PLUGINS)):
             bridge_board.lost(key, info, mid[0])
         await _broadcast_peers()
         bridge_board.changed()
@@ -741,13 +743,20 @@ def _live_plugins():
     return [(cid, i) for cid, i in PLUGINS.items() if not i["ws"].closed]
 
 
+def _open_plugins():
+    """The live slots that take scripts: a window told to close at a window's ✕
+    is as good as gone (bridge_board.close_file), for routing and /status alike,
+    so `figaro wait` and `targets` agree with where a script would go."""
+    return [(cid, i) for cid, i in _live_plugins() if not bridge_board.closing(i)]
+
+
 def resolve_target(target):
     """Map a target string (connection id, file name, fileKey, or substring) to a connection.
 
     Returns (conn_id, info) on success, or (None, reason) where reason is a
     human-readable string explaining the miss for the error response.
     """
-    live = _live_plugins()
+    live = _open_plugins()
     if not live:
         return None, "plugin not connected — open Figaro in Figma"
 
@@ -1278,7 +1287,7 @@ def _version_notice(info):
 
 
 def _files_payload():
-    live = _live_plugins()
+    live = _open_plugins()
     seen = {}
     out = []
     for cid, i in live:

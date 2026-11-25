@@ -30,7 +30,9 @@ The references next to this file — read each one when you reach its step:
   always `-T`.
 - The file is not connected — the answer says "open <link> in Figma and run Plugins → Development → Figaro
   there". Pass that on to the user, then `figaro wait -T "<link>"`: it returns once the file is connected.
-  Don't poll in a loop. `figaro doctor -T "<link>"` shows where the chain breaks.
+  Don't poll in a loop. `figaro doctor -T "<link>"` shows where the chain breaks. The user may have closed
+  Figaro there on purpose, with the ✕ on the file's island in the plugin's window: it closes only where no
+  agent is at work, which is why `figaro done` matters.
 - "This frame", "the selection" → `figaro sel -T …`; don't ask for ids.
 - The CLI starts the bridge by itself. Don't start it in background tasks, and don't stop it unless the user
   asks (then `bash start-bridge.sh --stop` in the Figaro folder).

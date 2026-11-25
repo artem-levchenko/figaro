@@ -1,5 +1,6 @@
 // The plugin names a document by its file key and writes nothing into it on
-// its own — it gets run in shared libraries too.
+// its own — it gets run in shared libraries too. It closes when its window says
+// so (the ✕ on its island), and only then.
 //
 //     node tests/plugin.test.js
 const fs = require("fs");
@@ -12,6 +13,7 @@ function load(fileKey) {
   const writes = [];
   const posted = [];
   const opened = [];
+  const closed = [];
   const record = (name) => (...args) => { writes.push([name, ...args]); };
   const figma = {
     root: {
@@ -23,6 +25,7 @@ function load(fileKey) {
       setRelaunchData: record("setRelaunchData"),
     },
     showUI() {},
+    closePlugin() { closed.push(true); },
     openExternal(url) { opened.push(url); },
     ui: { onmessage: null, postMessage(m) { posted.push(m); } },
     currentPage: { selection: [] },
@@ -35,7 +38,7 @@ function load(fileKey) {
     figma.fileKey = fileKey;
   }
   const api = new Function("figma", "__html__", src + "\nreturn { docSignature };")(figma, "");
-  return { api, writes, figma, opened, identity: posted.find((m) => m.type === "identity") };
+  return { api, writes, figma, opened, closed, identity: posted.find((m) => m.type === "identity") };
 }
 
 let failed = 0;
@@ -83,6 +86,15 @@ check("links open the project's pages and Figma's help only, the old address as 
   "https://github.com/artem-levchenko/figaro/releases/tag/v1.9.1",
   HELP,
 ]);
+
+// The ✕ on its island, in its own window or (through the bridge) in another: the plugin closes,
+// and says so to the bridge first, in its caps: a window without them gets no ✕.
+const shut = load("AbCdEf0123456789xyzKey");
+check("it says it can close", shut.identity.caps.includes("close"), true);
+for (const type of ["need-identity", "view", "resize"]) shut.figma.ui.onmessage({ type, view: "files", height: 100 });
+check("nothing else closes it", shut.closed.length, 0);
+shut.figma.ui.onmessage({ type: "close" });
+check("`close` closes it, as Figma's own close button does", [shut.closed.length, shut.writes], [1, []]);
 
 console.log(failed ? `\n${failed} FAILED` : "\nall plugin checks passed");
 process.exit(failed ? 1 : 0);

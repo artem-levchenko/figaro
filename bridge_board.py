@@ -22,10 +22,12 @@ something changes:
 A window's buttons come back over its WebSocket: `stop` (one agent in a file:
 its running script ends and its agent gets a 409; pressed between its
 scripts, its next script there is refused with a 409 and runs nothing),
-`update-now` and `reload-all` (bridge_update), `skip` (a release, and why its
-update failed), `set` (a switch in the settings, bridge_settings) and
-`check-update` (↻ there: ask GitHub now), and `figma-token`, `figma-token-remove` and `ask-hide`
-(the Figma token block and the ask for it, bridge_comments).
+`close-file` (the ✕ on another file's island: Figaro closes in that file's
+windows, unless the file is busy, close_file), `update-now` and `reload-all`
+(bridge_update), `skip` (a release, and why its update failed), `set` (a switch
+in the settings, bridge_settings) and `check-update` (↻ there: ask GitHub now),
+and `figma-token`, `figma-token-remove` and `ask-hide` (the Figma token block
+and the ask for it, bridge_comments).
 """
 
 from __future__ import annotations
@@ -54,6 +56,7 @@ HOLD = 600         # a Stop between scripts refuses the agent's next one within 
 STUCK_AFTER = 30   # a script still running this long after the bridge gave up on it: Figma isn't answering
 LOST_GRACE = 10    # a window that closed mid-script and comes back this soon was a restart (Hot reload)
 LOST_KEEP = 900    # how long a file whose window closed mid-script stays on the board
+CLOSE_WAIT = 10    # a window told to close takes no scripts this long; one still open by then takes them again
 
 FILES: dict = {}   # doc key -> {"agents": {name: agent}, "recent": [change]}
 LOST: dict = {}    # doc key -> {"name", "sig", "fileKey", "agent", "at"}: its window closed mid-script
@@ -167,7 +170,9 @@ def payload():
     An agent is `busy` while a script of its runs in the file or waits for it;
     the window works out the rest from the times and ACTIVE_FOR. A file that
     stopped answering has `stuck`, and one whose window closed mid-script is
-    in `lost`: a window older than both shows neither."""
+    in `lost`: a window older than both shows neither. `closable`: every window
+    of the file can close at a window's ✕ (close_file); a window older than it
+    shows no ✕."""
     files, done = [], set()
     asking = bridge_comments.asks()
     for cid, info in bridge._live_plugins():
@@ -185,6 +190,7 @@ def payload():
             "recent": f["recent"],
             "stuck": stuck(key),
             "ask": asking.get(key),
+            "closable": closable(key),
         })
         part = bridge_review.board_part(key, info)  # none with the global switch off: no row
         if part is not None:
@@ -423,6 +429,83 @@ def stop(doc, agent=None):
     return True
 
 
+# ─── the ✕ on an island ───────────────────────────────────────────────────
+
+def _windows(key):
+    """The windows of the file that said which file they are."""
+    return [(cid, info) for cid, info in bridge._live_plugins()
+            if info.get("hello") and bridge._doc_key(cid) == key]
+
+
+def closable(key):
+    """Every window of the file closes when it is told to: a build with `close`.
+    An older one would ignore it, so its file shows no ✕."""
+    windows = _windows(key)
+    return bool(windows) and all("close" in (info.get("caps") or []) for _, info in windows)
+
+
+def closing(info):
+    """The window was told to close a moment ago: no script goes to it, and its
+    going is no "Figma isn't answering"."""
+    at = info.get("closing")
+    return at is not None and time.time() - at < CLOSE_WAIT
+
+
+def busy_why(key):
+    """Why Figaro can't close in the file now, or None: an agent at work there
+    (a script of its runs or waits, or one ended less than ACTIVE_FOR ago and it
+    isn't done or stopped: the window's pixel grid), the Reviewer checking, or a
+    script still running or waiting there, an agent's or not."""
+    now = time.time()
+    busy = _busy(key)
+    for name, a in (FILES.get(key) or {}).get("agents", {}).items():
+        if name in busy or (not a["done"] and not a["stopped"] and a["last"]
+                            and now - a["last"] < ACTIVE_FOR):
+            return "an agent is working"
+    if busy:
+        return "an agent is working"
+    if (bridge_review.STATE.get(key) or {}).get("state") == "checking":
+        return "the reviewer is checking"
+    q = bridge.QUEUE.get(key) or {}
+    lock = bridge.LOCKS.get(key)
+    if (q.get("waiting") or q.get("running") or (lock and lock.locked())
+            or any(e.get("doc") == key and not e.get("finished") for e in bridge.PENDING.values())
+            or any(o.get("doc", o.get("conn")) == key for o in bridge.ABANDONED.values())):
+        return "a script runs there"
+    return None
+
+
+async def close_file(conn_id, doc):
+    """The ✕ on another file's island: Figaro closes in every window of that
+    file, and their island leaves every window once they have gone. Nothing
+    closes while the file is busy (busy_why: an agent began a script between the
+    click and now) or a window of it is too old to close: the window that asked
+    hears so (`close-refused`), and its ✕ comes back. A window told to close
+    takes no scripts meanwhile, so an agent's next one gets the usual "not
+    connected"; still open after CLOSE_WAIT, it takes them again."""
+    windows = _windows(doc) if doc else []
+    why = ("not open" if not windows else "an older build" if not closable(doc) else busy_why(doc))
+    if why:
+        asker = (bridge.PLUGINS.get(conn_id) or {}).get("ws")
+        if asker is not None:
+            try:
+                await asker.send_str(json.dumps({"type": "close-refused", "doc": doc, "why": why}))
+            except Exception:
+                pass
+        print(f"[board] the user's close of {doc} refused: {why}")
+        return
+    now = time.time()
+    for _, info in windows:
+        info["closing"] = now
+    for _, info in windows:
+        try:
+            await info["ws"].send_str(json.dumps({"type": "close"}))
+        except Exception:
+            pass
+    print(f"[board] the user closed Figaro in {windows[0][1].get('name')!r} ({len(windows)} window"
+          f"{'' if len(windows) == 1 else 's'})")
+
+
 async def handle(conn_id, m):
     """A button in a window. True if `m` was one."""
     mtype = m.get("type")
@@ -434,6 +517,8 @@ async def handle(conn_id, m):
             bridge_review.stop(doc)
         elif doc:
             stop(doc, agent)
+    elif mtype == "close-file":
+        await close_file(conn_id, doc)
     elif mtype == "update-now":
         bridge_update.start(pull=True)
     elif mtype == "reload-all":

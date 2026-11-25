@@ -188,6 +188,28 @@ html.rainbow .px i:nth-child(9) { --c: hsl(275 75% 62%); animation-delay: 0ms; }
 .chev { width: 20px; height: 20px; display: grid; place-items: center; padding: 0; border: 0; background: none; color: var(--is-faint); cursor: pointer; }
 .chev svg { width: 10px; height: 10px; }
 .island.open .chev { transform: rotate(180deg); }
+/* Close Figaro in a file: a ✕ left of the chevron, on every island but a lost one. It shows while
+   the pointer is on the island (.over, which the window keeps and draws with the island, as it
+   draws its islands anew on every change: pointing()) or the keyboard is in its row, and takes no
+   room: a name that reaches it fades out under it, as a browser tab's does, with no ellipsis.
+   Busy (an agent at work, the Reviewer checking, Figma not answering there), it is faint and does
+   nothing; pressed, a grey spinner takes its place until the island goes, pointer or not. */
+@property --xm { syntax: "<number>"; inherits: false; initial-value: 1; }
+.row.has-x .lbl { -webkit-mask-image: linear-gradient(to left, rgb(0 0 0 / var(--xm)) 22px, #000 46px);
+  mask-image: linear-gradient(to left, rgb(0 0 0 / var(--xm)) 22px, #000 46px); transition: --xm .14s ease; }
+.island.over > .row.has-x .lbl, .row.has-x:has(:focus-visible) .lbl, .row.x-wait .lbl { --xm: 0; }
+:is(.island.over > .row.has-x, .row.has-x:has(:focus-visible), .row.x-wait) .lbl :is(b, .sub) { text-overflow: clip; }
+.cx { position: absolute; top: 5px; right: 28px; z-index: 1; width: 20px; height: 20px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 10px;
+  background: none; color: var(--is-dim); cursor: pointer; opacity: 0; transform: scale(.6); pointer-events: none;
+  transition: opacity .1s ease, transform .14s ease, background-color .12s ease, color .12s ease; }
+.cx svg { width: 10px; height: 10px; }
+.island.over > .row .cx, .row:has(:focus-visible) .cx { opacity: 1; transform: none; pointer-events: auto; transition-timing-function: ease, cubic-bezier(.2, .8, .2, 1), ease, ease; }
+.cx.over { background: var(--is-fill); color: var(--is-text); }
+.cx:focus-visible { outline: 2px solid var(--run); outline-offset: -2px; }
+.cx[aria-disabled="true"], .cx[aria-disabled="true"].over { cursor: default; background: none; color: var(--is-faint); }
+.island.over > .row .cx[aria-disabled="true"] { opacity: .6; }
+.row .cx.going, .island.over > .row .cx.going { opacity: 1; transform: none; pointer-events: auto; }
+.cx .spin { --c: var(--is-dim); filter: none; }  /* the ✕'s own grey, without the glow */
 
 /* An island opens by growing its panel from nothing, pushing the islands under
    it down, and closes the same way back; the window follows it (fit). */
@@ -381,13 +403,18 @@ button.layer:hover { background: color-mix(in srgb, var(--run) var(--is-tint), t
    points at it; by the window's edge it slides in to stay 6 px inside, the
    tail still on the button (placeTips). */
 .tw { position: relative; flex: none; display: flex; }
-.tip { --cx: 50%; position: absolute; left: 0; bottom: calc(100% + 7px); z-index: 4; padding: 5px 8px; border-radius: 5px; background: #1e1e1e; color: #fff;
+.tip, #xtip { --cx: 50%; position: absolute; left: 0; bottom: calc(100% + 7px); z-index: 4; padding: 5px 8px; border-radius: 5px; background: #1e1e1e; color: #fff;
   font: 500 11px/14px var(--sys); white-space: nowrap; box-shadow: 0 2px 10px rgba(0, 0, 0, .3); pointer-events: none;
   opacity: 0; transform: translateY(2px); transition: opacity .12s, transform .12s; }
-.tip::after { content: ""; position: absolute; top: 100%; left: var(--cx); margin-left: -5px; border: 5px solid transparent; border-top-color: #1e1e1e; border-bottom: 0; }
-.tip kbd { font: inherit; color: rgba(255, 255, 255, .62); }
+.tip::after, #xtip::after { content: ""; position: absolute; top: 100%; left: var(--cx); margin-left: -5px; border: 5px solid transparent; border-top-color: #1e1e1e; border-bottom: 0; }
+.tip kbd, #xtip kbd { font: inherit; color: rgba(255, 255, 255, .62); }
 .tw:hover .tip, .tw:has(:focus-visible) .tip { opacity: 1; transform: none; transition-delay: .45s; }
 .tw:has(.hold) .tip, .tw:active .tip { opacity: 0; transform: translateY(2px); transition: none; }
+/* The ✕'s hint (xTip): the same, drawn on the page, as an island clips what sticks out of it; over
+   the ✕, or under it when there is no room above. */
+#xtip { top: 0; bottom: auto; position: fixed; z-index: 9; }
+#xtip.on { opacity: 1; transform: none; }
+#xtip.below::after { top: auto; bottom: 100%; border-top: 0; border-bottom: 5px solid #1e1e1e; }
 
 /* The settings: a row with the way back, the switches in one island, and the
    version in an open one: what to do about it, what is new, and where
@@ -522,7 +549,7 @@ body > .ghost { position: fixed; right: 0; bottom: 0; z-index: 5; display: flex;
 
 @media (prefers-reduced-motion: reduce) {
   .slot.enter, .slot.enter > .island, .slot.leave, .island.opening :is(.fold, .panel, .chev) { animation: none; }
-  .agent[data-agent], .act, .act .ib, .foot .skip, .tip, .tl, .tl .ic, .tl .ring circle, .sw, .sw::after { transition: none; }
+  .agent[data-agent], .act, .act .ib, .foot .skip, .tip, .tl, .tl .ic, .tl .ring circle, .sw, .sw::after, .cx, #xtip, .row.has-x .lbl { transition: none; }
   .mini.enter { animation: none; }
   .spin { animation-duration: 2.4s; }
   .px i { animation: none; opacity: .6; }
@@ -534,6 +561,7 @@ body > .ghost { position: fixed; right: 0; bottom: 0; z-index: 5; display: flex;
 <div id="scroll"><div id="app"></div><div id="end"></div></div>
 <div id="foot"></div>
 <div id="rvtip" role="tooltip"></div>
+<div id="xtip" role="tooltip"></div>
 
 <script>
 const SERVER = "ws://localhost:8788/plugin";
@@ -657,6 +685,9 @@ const CUES = {
   go: [{ src: "sine", hz: 330, env: [0.002, 0.045], gain: 0.36 },                     // Update, Reload: it starts
        { src: "sine", hz: 415, at: 0.06, env: [0.002, 0.045], gain: 0.38 },
        { src: "sine", hz: 523, at: 0.105, env: [0.002, 0.09, 0.02], gain: 0.42 }],
+  shut: [{ src: "sine", hz: 523, env: [0.002, 0.045], gain: 0.36 },                   // the ✕: go's three notes going down
+         { src: "sine", hz: 415, at: 0.06, env: [0.002, 0.045], gain: 0.38 },
+         { src: "sine", hz: 330, at: 0.105, env: [0.002, 0.12, 0.03], gain: 0.42 }],
   stop: [{ src: "noise", filter: ["lowpass", 1400, 0.8], env: [0.0008, 0.035], gain: 0.3 },  // Stop: a thud down
          { src: "sine", hz: [340, 140], env: [0.002, 0.12, 0.02], gain: 0.5 }],
   skip: [{ src: "noise", filter: ["bandpass", [900, 4000], 1.2], env: [0.008, 0.1], gain: 0.8 }],  // Skip: off it flies
@@ -919,6 +950,8 @@ function takeBoard(m) {
     stuck: f.stuck ? { agent: f.stuck.agent || "agent", since: t(f.stuck.since) } : null,
     lost: f.lost ? { agent: f.lost.agent || "agent", at: t(f.lost.at) } : null,
     reviewer: reviewerOf(f.reviewer, t),
+    // every window of the file closes at the ✕; a bridge before it says nothing, and there is no ✕
+    closable: f.closable === true,
   });
   board = {
     version: m.version || "", update: m.update || null, release: m.release || null, stale: !!m.stale,
@@ -1025,12 +1058,29 @@ function shown(f) {
   return f.here || conn === "ok";
 }
 
+// The ✕ on an island closes Figaro in that file, and the file stays open in Figma: this
+// file's window closes itself, as at Figma's own close button, and another file's windows
+// close at the bridge's word (close-file). Each file's island has it once the board says
+// every window of the file can close (`closable`): an older one would ignore the word, and
+// an older bridge says nothing. Not while an agent is at work there, the Reviewer checks or
+// Figma isn't answering (the bridge says no then too, `close-refused`), nor while this
+// window runs a script. From the press until the island goes, a spinner takes its place.
+const CLOSE_WAIT_MS = 10000;   // a file whose window hasn't closed by then gets its ✕ back (the bridge's CLOSE_WAIT)
+const SHUT_MS = 300;           // this file's window closes once its sound has played
+const going = new Map();       // island id -> when its ✕ was pressed
+const canClose = (f) => conn === "ok" && !!board && f.closable === true && !f.lost && !!f.doc;
+const closeBusy = (f) => !!alarm(f) || agentsOf(f).some((a) => a.st === "working")
+  || !!(rvOf(f) && rvOf(f).state === "checking") || (f.here && local.size > 0);
+const TIP_X = "Close Figaro in this file. <kbd>The file stays open</kbd>";
+const TIP_X_BUSY = "Can't close while an agent is working";
+
 // ─── drawing it ──────────────────────────────────────────────────────────
 const PALETTE = ["#7b61ff", "#f2711c", "#12a594", "#e5489b", "#3e7bfa", "#b7791f"];
 // An agent at work; what Figaro itself does (connecting, updating) has the spinner.
 const LOADER = '<span class="px" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>';
 const ICON = {
   chev: '<svg viewBox="0 0 10 10"><path d="M2 3.5 5 6.5 8 3.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  x: '<svg viewBox="0 0 10 10" aria-hidden="true"><path d="M2.6 2.6 7.4 7.4M7.4 2.6 2.6 7.4" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>',
   again: '<svg viewBox="0 0 10 10"><path d="M8.6 5.9A3.75 3.75 0 1 1 7.8 2.3M8.6.9v2.1H6.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>',
   arrow: '<svg viewBox="0 0 10 10"><path d="M1.5 5h6.6M5.6 2.3 8.3 5 5.6 7.7" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>',
   left: '<svg viewBox="0 0 10 10"><path d="M8.5 5H1.9M4.4 2.3 1.7 5l2.7 2.7" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>',
@@ -1123,14 +1173,23 @@ function headlineOf(f) {
 }
 
 // An open island lists everything below its row, so the row keeps only the file's name.
+// Left of the chevron, the ✕ that closes Figaro in the file.
 function row(f) {
   const h = headline(f);
   const isOpen = open.has(f.id);
   const right = `<button type="button" class="chev" data-act="toggle" aria-label="${isOpen ? "Collapse" : "Expand"}" tabindex="-1">${ICON.chev}</button>`;
   const sub = h.sub && !isOpen ? `<span class="sub${h.alarm ? " alarm" : ""}">${h.sub}</span>` : "";
-  return `<div class="row"><button type="button" class="tg" data-act="toggle" aria-expanded="${isOpen}">`
+  const x = canClose(f) ? xButton(f) : "";
+  return `<div class="row${x ? (going.has(f.id) ? " has-x x-wait" : " has-x") : ""}"><button type="button" class="tg" data-act="toggle" aria-expanded="${isOpen}">`
     + `<span class="ind">${h.ind}</span><span class="lbl"><b title="${esc(f.name)}">${esc(f.name)}</b>${sub}</span></button>`
-    + `<div class="right">${right}</div></div>`;
+    + `${x}<div class="right">${right}</div></div>`;
+}
+// The ✕, lit while the pointer is on it (overX); its spinner once pressed.
+function xButton(f) {
+  if (going.has(f.id)) return '<button type="button" class="cx going" aria-label="Closing Figaro in this file" aria-disabled="true" tabindex="-1"><span class="spin"></span></button>';
+  const busy = closeBusy(f);
+  return `<button type="button" class="cx${overX && over === f.id ? " over" : ""}" data-act="x-close" aria-label="${busy ? TIP_X_BUSY : "Close Figaro in this file"}"`
+    + `${busy ? ' aria-disabled="true"' : ""}>${ICON.x}</button>`;
 }
 
 function callout(f) {
@@ -1330,7 +1389,7 @@ function panel(f) {
 function island(f, cls, anim) {
   const isOpen = open.has(f.id);
   const shut = !isOpen && closing.has(f.id);
-  const state = isOpen ? " open" + (anim ? " opening" : "") : shut ? " closing" : "";
+  const state = (isOpen ? " open" + (anim ? " opening" : "") : shut ? " closing" : "") + (over === f.id ? " over" : "");
   return `<div class="slot${cls}" data-fid="${esc(f.id)}"><div class="island${state}">${row(f)}`
     + (isOpen || shut ? `<div class="fold"><div>${panel(f)}</div></div>` : "") + "</div></div>";
 }
@@ -1808,6 +1867,9 @@ function render() {
     if (now - at < ANIM_MS) continue;
     closing.delete(id);
   }
+  // a pressed ✕ keeps its spinner until its island has gone, its shrinking out too; one whose
+  // window is still there after CLOSE_WAIT_MS comes back
+  for (const [id, at] of going) if (now - at >= CLOSE_WAIT_MS || !onScreen.has(id)) going.delete(id);
   lastSig = signature();
   const files = filesNow();
   const byId = new Map(files.map((f) => [f.id, f]));
@@ -1842,6 +1904,8 @@ function render() {
     app.innerHTML = html;
     lastHtml = html;
     rvHint(null);  // its "?" may be gone
+    pointing();    // what is under the pointer now
+    xTip();        // the ✕'s hint follows its button into the new row
   }
   if (tail !== lastFoot) {
     foot.innerHTML = tail;
@@ -1990,6 +2054,7 @@ function step(now) {
   q = now - d.t0 > d.curve.ms + LATE_MS ? 1 : Math.max(0, Math.min(1, q));
   d.fold.style.height = Math.floor(d.from + (d.to - d.from) * q) + "px";
   edges();
+  pointing();  // the islands under it move under a still pointer
   if (q >= 1 && t >= 1) { finishDrive(); return; }
   const next = Math.round(d.h0 + (d.h1 - d.h0) * e);
   if (next !== d.sent) { d.sent = next; ask(next); }
@@ -2024,6 +2089,8 @@ function edges() {
 let still = null;
 function scrolled() {
   edges();
+  pointing();  // the islands move under the pointer
+  xTip();
   scroller.classList.add("moving");
   clearTimeout(still);
   still = setTimeout(() => scroller.classList.remove("moving"), 900);
@@ -2055,6 +2122,17 @@ function act(name, fid, el) {
       animId = f.id;
       setTimeout(() => reveal(f.id), ANIM_MS + 60);  // the window may have grown by then
     }
+    render();
+  } else if (name === "x-close" && f && canClose(f) && !going.has(f.id) && !closeBusy(f)) {
+    cue("shut");
+    going.set(f.id, Date.now());
+    xTipOff();
+    if (f.here) {  // this window: it closes itself once its sound has played
+      setTimeout(() => parent.postMessage({ pluginMessage: { type: "close" } }, "*"), board.sounds ? SHUT_MS : 0);
+    } else {
+      send({ type: "close-file", doc: f.doc });
+    }
+    setTimeout(schedule, CLOSE_WAIT_MS + 50);  // still there by then: its ✕ comes back
     render();
   } else if (name === "stop" && f && f.doc && el.dataset.agent) {
     cue("stop");
@@ -2214,6 +2292,97 @@ function point(key) {
     el.classList.toggle("hot", !!slot && slot.dataset.fid + "\n" + el.dataset.agent === key);
   }
 }
+// The island the pointer is on, and whether it is on that island's ✕: the window keeps them
+// (`over`, `overX`) and draws them with the islands. A row drawn anew isn't :hover until the
+// pointer moves, so with CSS alone the ✕ went out under a still pointer, and the name ran under
+// it, for the frames an island took to open or close; and a class added after the row is drawn
+// plays its fade from nothing. The pointer's place comes from its moves, and what is under it
+// is asked again as the list scrolls and after every drawing.
+let px = null;                 // where the pointer is in the window; null: out of it
+let py = null;
+let over = null;               // the island under the pointer, by id
+let overX = false;             // …and the pointer on its ✕
+function pointing() {
+  if (typeof document.elementFromPoint !== "function" || typeof app.querySelectorAll !== "function") return;
+  const at = () => (px === null ? null : document.elementFromPoint(px, py));
+  let el = at();
+  const slot = el && el.closest ? el.closest(".slot[data-fid]") : null;  // a slot going away takes no pointer
+  const isl = slot ? slot.querySelector(".island") : null;
+  over = isl ? slot.dataset.fid : null;
+  for (const n of app.querySelectorAll(".island.over")) if (n !== isl) n.classList.remove("over");
+  if (isl) isl.classList.add("over");
+  el = isl ? at() : null;  // its ✕ shows now, and takes the pointer
+  const x = el && el.closest ? el.closest(".cx[data-act]") : null;
+  overX = !!x;
+  for (const n of app.querySelectorAll(".cx.over")) if (n !== x) n.classList.remove("over");
+  if (x) x.classList.add("over");
+}
+function pointAt(e) {
+  px = e.clientX;
+  py = e.clientY;
+  pointing();
+}
+document.addEventListener("pointermove", pointAt, { passive: true });
+document.addEventListener("pointerdown", pointAt);
+
+// The ✕'s hint: after a moment on it, as the last line's buttons' (or at once from the keyboard),
+// over it and drawn on the page, as the island clips what sticks out of it. `tipFor` is the
+// island whose ✕ has the pointer; the hint goes with a press, and comes back when the pointer
+// comes to a ✕ again.
+const xtip = document.getElementById("xtip");
+let tipFor = null;
+let tipTimer = null;
+function xButtonOf(id) {
+  if (id === null || typeof app.querySelectorAll !== "function") return null;
+  for (const b of app.querySelectorAll(".cx[data-act]")) {
+    const slot = b.closest("[data-fid]");
+    if (slot && slot.dataset.fid === id) return b;
+  }
+  return null;
+}
+// Show the hint, or move it to where its button is now, with what it says now; none: it goes.
+function xTip(show) {
+  if (!xtip || !xtip.classList) return;
+  const b = xButtonOf(tipFor);
+  if (!b) { xTipOff(); return; }
+  if (!show && !xtip.classList.contains("on")) return;
+  xtip.innerHTML = b.getAttribute("aria-disabled") === "true" ? TIP_X_BUSY : TIP_X;
+  const r = b.getBoundingClientRect(), w = xtip.offsetWidth, h = xtip.offsetHeight;
+  const width = document.documentElement.clientWidth || WIDTHS[view];
+  const cx = r.left + r.width / 2, left = Math.max(6, Math.min(width - 6 - w, cx - w / 2));
+  const below = r.top - 7 - h < 2;
+  xtip.classList.toggle("below", below);
+  xtip.style.left = left + "px";
+  xtip.style.top = (below ? r.bottom + 7 : r.top - 7 - h) + "px";
+  xtip.style.setProperty("--cx", cx - left + "px");
+  xtip.classList.add("on");
+}
+function xTipOff(keep) {
+  clearTimeout(tipTimer);
+  tipTimer = null;
+  if (!keep) tipFor = null;
+  if (xtip && xtip.classList) xtip.classList.remove("on");
+}
+document.addEventListener("pointerover", (e) => {
+  const b = e.target && e.target.closest ? e.target.closest(".cx[data-act]") : null;
+  const slot = b && b.closest("[data-fid]");
+  const id = slot ? slot.dataset.fid : null;
+  if (id === tipFor) return;
+  xTipOff();
+  if (id === null) return;
+  tipFor = id;
+  tipTimer = setTimeout(() => xTip(true), 450);
+});
+document.addEventListener("pointerdown", () => xTipOff(true));
+document.addEventListener("focusin", (e) => {
+  const b = e.target && e.target.closest ? e.target.closest(".cx[data-act]") : null;
+  if (!b || !b.matches(":focus-visible")) return;
+  xTipOff();
+  tipFor = b.closest("[data-fid]").dataset.fid;
+  xTip(true);
+});
+document.addEventListener("focusout", (e) => { if (e.target && e.target.classList && e.target.classList.contains("cx")) xTipOff(); });
+
 // The pointer in the window: the last line shows Skip.
 function inside(on) { if (foot.classList) foot.classList.toggle("inside", on); }
 // The reviewer's "?": its hint, drawn on the page and not in the island, which clips what sticks out of it.
@@ -2238,7 +2407,14 @@ document.addEventListener("pointerover", (e) => {
 });
 document.addEventListener("pointerout", (e) => {
   if (hold && hold.el.contains(e.target) && !hold.el.contains(e.relatedTarget)) holdEnd(false);  // off Minimize: no minimize
-  if (!e.relatedTarget) { point(""); inside(false); rvHint(null); }  // it left the window
+  if (!e.relatedTarget) {  // it left the window
+    point("");
+    inside(false);
+    rvHint(null);
+    px = py = null;
+    pointing();
+    xTipOff();
+  }
 });
 const calm = () => !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
 
@@ -2388,6 +2564,12 @@ function connect() {
       hear(before, board);
       warmCues();
       schedule();
+    } else if (msg.type === "close") {
+      // The ✕ on this file's island in another window: Figaro closes here (code.js).
+      parent.postMessage({ pluginMessage: { type: "close" } }, "*");
+    } else if (msg.type === "close-refused") {
+      // The file got busy between the press and the bridge's look: its ✕ comes back.
+      if (going.delete(msg.doc)) schedule();
     } else if (msg.type === "update") {
       // A newer release (vX.Y.Z tag) than the bridge's VERSION; url = its release page.
       update = { latest: msg.latest, current: msg.current, url: msg.url };

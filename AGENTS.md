@@ -45,7 +45,8 @@ venv/bin/python -m pytest -q             # bridge, board, update, CLI, queue, fu
 /tmp/figaro-py39/bin/python -m pytest -q # the same on macOS's own python3 (3.9), the oldest we support
 node tests/helpers.test.js               # pure helpers of plugin/code.js on a stub of Figma
 node tests/plugin.test.js                # the plugin writes nothing to the file; the document id is the fileKey;
-                                         # links open only the project's pages and Figma's help, the old address as the new
+                                         # links open only the project's pages and Figma's help, the old address as the new;
+                                         # `close` (the ✕ on its island) closes it
 node tests/audit.test.js                 # h.audit: every rule flagged and quiet, the cap, the bounded walk, h.ck()
 node tests/exec.test.js                  # the exec core: change reports, Cmd+Z, read-only, undo, error lines
 node tests/commands.test.js              # links, quick reads, --lib, inspect, shot, fonts, auto-layout, find
@@ -131,6 +132,12 @@ Then read `run.jsonl` (commands, errors, the final report) and clean up what it 
   needs nothing of the window: an older bridge answers 404 and the live tests carry on (`live_file.forget`).
   A file turns red when Figma stops answering there: a script runs on `STUCK_AFTER` past its time (`stuck`), or its window closed
   mid-script (`lost`, kept `LOST_KEEP`; a window back within `LOST_GRACE` was a Hot reload).
+  The ✕ on another file's island sends `close-file`: `close_file` tells every window of that file `close`, unless
+  the file is busy (`busy_why`: an agent at work by the window's own measure, `ACTIVE_FOR` after its last script
+  unless it is done or stopped; the Reviewer checking; anything running or waiting there) or a window of it lacks
+  the `close` cap, and then answers the asking window `close-refused`. A window told to close is `closing` for
+  `CLOSE_WAIT`: no script is routed to it and `/status` leaves it out (`bridge._open_plugins`), and its going
+  is no `lost`. The board's `files[].closable` says every window of the file has `close`.
 - `bridge_update.py` — the window's Update and Reload: waits until no file runs a script, moves the folder
   to the release and never past it (`git fetch --tags`, `git merge --ff-only vX.Y.Z`), reloads the plugins
   that run older code, restarts the bridge (`os.execv`; on Windows `start-bridge.ps1 -Restart`). Scripts sent
@@ -212,11 +219,17 @@ Then read `run.jsonl` (commands, errors, the final report) and clean up what it 
 - `plugin/` — `manifest.json`, `code.js` (the `HELPERS` object behind `h.*`, running scripts with a deadline,
   a guard in every loop's head that ends it there (`guardLoops`), change tracking and whose change it was
   (`codeMayWrite`), undo, selecting a layer from the window, the window's size and place (`fitWindow`), and
-  its view, which a file keeps on this computer (`keepView`, `clientStorage`)),
+  its view, which a file keeps on this computer (`keepView`, `clientStorage`), and `close`, the ✕'s
+  `figma.closePlugin()`),
   `ui.html` (the window: one island per file where Figaro runs, in a list that scrolls, and under them a line
   that is always there: the version, with Update, Reload or a failure's "!" by it, and ⚙ Settings and ⤡
   Minimize. The settings take the islands' place (`settingsView`, `versionCard`); minimized, the window is
-  one card, 240 px wide, or 70 px held (`miniView`). `glide` moves from one view to another); the Reviewer's row, its switch and its notes callout are `reviewerRow` and `reviewerAsk`, shown only when the file's board entry has `reviewer` and `settings.reviewer` isn't off).
+  one card, 240 px wide, or 70 px held (`miniView`). `glide` moves from one view to another); the Reviewer's row, its switch and its notes callout are `reviewerRow` and `reviewerAsk`, shown only when the file's board entry has `reviewer` and `settings.reviewer` isn't off;
+  the ✕ that closes Figaro in a file is `xButton` in `row`, on a file the board calls `closable` (this file's
+  window closes itself, another's through `close-file`), with its hint `#xtip` (`xTip`) on the page and a spinner
+  while it closes (`going`, kept by file until the island has gone). The island under the pointer is the
+  window's state, `over`, drawn into the markup (`pointing`, from the pointer's moves): a redrawn row isn't
+  `:hover` until the pointer moves, so CSS alone blinked the ✕ out for the frames an island opened or closed).
 - `skill/figaro/` — `SKILL.md` (the loop, the commands, safety, house rules) and `references/`:
   `helpers.md`, `craft.md`, `pitfalls.md`. The recipes in them were checked against real Figma.
 - `tools/install.sh` — the command and the skill's links (`~/.claude/skills`, `~/.agents/skills`); never
@@ -269,6 +282,9 @@ Then read `run.jsonl` (commands, errors, the final report) and clean up what it 
   the marks it can't show still keep their layers off the notes. The answer's `marked` is optional too.
   Sign agents' comments likewise: a window shows the switch only when `settings` has `sign`. An ask's
   `what: "write"` makes a window say "wants to post comments"; an older window says "read" all the same.
+  The ✕ on an island likewise: a window shows it only on a file the board calls `closable`, so a new window
+  with an older bridge shows none; an older window ignores the key, and its own file is never `closable`, as
+  its build has no `close` cap and would ignore the bridge's `close`.
 - **`plugin/ui.html` passes the exec fields to the sandbox by name.** A new field in
   `bridge_exec.exec_fields` must be added there too, or it never arrives; `tests/test_exec.py` catches it.
 - **The plugin never writes to the document.** The document id is `figma.fileKey`, which a development

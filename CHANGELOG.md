@@ -9,6 +9,17 @@ file; the release notes say when it has to be imported again.
 
 ## [Unreleased]
 
+### Added
+
+- **Close Figaro in another file from the window.** Point at a file's island, and a ✕ shows left of its
+  chevron: it closes Figaro in that file without going to its tab, and the file stays open in Figma. On this
+  file's island it closes this window, as Figma's own close button does. It waits while an agent is at work
+  there, the Reviewer checks or Figma isn't answering: the ✕ is faint then and says why, and the bridge says no
+  too. Pressed, it plays its own sound, and a spinner takes its place until the file's island goes. An agent's
+  next script there gets the usual "not connected". The bridge sends `close` only to a plugin that says it can
+  close (`close` in its caps) and the window shows the ✕ only where the board's file is `closable`, so an older
+  window or bridge shows none.
+
 ## [1.12.0] — 2026-11-24
 
 ### Added

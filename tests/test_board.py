@@ -14,6 +14,7 @@ import pytest
 
 import bridge
 import bridge_board
+import bridge_review
 import bridge_update
 import figaro_token
 from test_bridge import make_client, names, run, until
@@ -478,6 +479,130 @@ def test_an_older_windows_stop_ends_whatever_runs_in_the_file():
             # The script ran to its end despite the Stop; its agent still has to hear of it.
             assert r.status == 409 and "pressed Stop" in (await r.json())["error"]
             assert (await c.post("/exec", json={"code": "x"})).status == 200  # it was told: no hold
+        await c.close()
+    run(go())
+
+
+# ─── the ✕ on an island ───────────────────────────────────────────────────
+
+CLOSE = CAPS + ("close",)
+
+
+def close_file(p, doc):
+    """The ✕ on a file's island, pressed in window `p`."""
+    return p.ws.send_str(json.dumps({"type": "close-file", "doc": doc}))
+
+
+def test_the_board_says_which_files_can_close():
+    async def go():
+        c = await make_client()
+        async with FakePlugin(c, name="Dashboard", key="KEY1", caps=CLOSE) as a, \
+                FakePlugin(c, name="UI kit", key="KEY2", caps=CAPS):
+            assert await until(lambda: len(boards(a)[-1]["files"]) == 2)
+            assert island(a, "Dashboard")["closable"] is True
+            assert island(a, "UI kit")["closable"] is False  # an older build would ignore the word
+            async with FakePlugin(c, name="Dashboard", key="KEY1", caps=CAPS):  # an older window of it too
+                assert await until(lambda: island(a, "Dashboard")["closable"] is False)
+            assert await until(lambda: island(a, "Dashboard")["closable"] is True)
+        await c.close()
+    run(go())
+
+
+def test_close_file_closes_every_window_of_the_file_and_they_take_no_scripts_meanwhile():
+    async def go():
+        c = await make_client()
+        async with FakePlugin(c, name="Dashboard", key="KEY1", caps=CLOSE) as a, \
+                FakePlugin(c, name="UI kit", key="KEY2", caps=CLOSE) as b, \
+                FakePlugin(c, name="UI kit", key="KEY2", caps=CLOSE) as b2:  # the file in a second tab
+            await close_file(a, "doc:KEY2")
+            assert await until(lambda: b.of("close") and b2.of("close"))
+            await settle()
+            assert (a.of("close"), a.of("close-refused"), b.of("close-refused")) == ([], [], [])
+            # its windows are as good as gone: an agent's script there hears it isn't connected
+            r = await c.post("/exec", json={"code": "x", "target": "UI kit", "agent": "designer"})
+            assert r.status == 409 and "no connected file matches 'UI kit'" in (await r.json())["error"]
+            assert b.of("exec") == [] and b2.of("exec") == []
+            status = await (await c.get("/status")).json()  # what figaro wait and targets read
+            assert [f["name"] for f in status["files"]] == ["Dashboard"]
+            await b.__aexit__()
+            await b2.__aexit__()  # they close
+            assert await until(lambda: [f["name"] for f in boards(a)[-1]["files"]] == ["Dashboard"])
+            await settle()
+            assert boards(a)[-1]["lost"] == []  # closed by the user: no "Figma isn't answering"
+        await c.close()
+    run(go())
+
+
+def test_close_file_waits_for_the_agents_to_finish(monkeypatch):
+    async def go():
+        c = await make_client()
+        async with FakePlugin(c, name="Dashboard", key="KEY1", caps=CLOSE) as a, \
+                FakePlugin(c, name="UI kit", key="KEY2", caps=CLOSE, delay=0.6) as b:
+            refused = lambda: [m["why"] for m in a.of("close-refused") if m["doc"] == "doc:KEY2"]  # noqa: E731
+            call = asyncio.ensure_future(c.post("/exec", json={"code": "x", "target": "UI kit", "agent": "designer"}))
+            assert await until(lambda: b.of("exec"))
+            await close_file(a, "doc:KEY2")  # a script runs there
+            assert await until(lambda: refused() == ["an agent is working"])
+            assert (await call).status == 200
+            await close_file(a, "doc:KEY2")  # its agent is still at work: the window's pixel grid
+            assert await until(lambda: len(refused()) == 2)
+            assert (await c.post("/done", json={"target": "UI kit", "agent": "designer"})).status == 200
+            bridge_review.STATE["doc:KEY2"] = {"state": "checking"}
+            await close_file(a, "doc:KEY2")
+            assert await until(lambda: refused()[2:] == ["the reviewer is checking"])
+            bridge_review.STATE.pop("doc:KEY2")
+            assert b.of("close") == []
+            await close_file(a, "doc:KEY2")  # it said it is done: Figaro closes there
+            assert await until(lambda: b.of("close"))
+            assert len(refused()) == 3
+        await c.close()
+    run(go())
+
+
+def test_an_agent_quiet_past_its_time_is_no_reason_to_wait(monkeypatch):
+    monkeypatch.setattr(bridge_board, "ACTIVE_FOR", 0.3)
+
+    async def go():
+        c = await make_client()
+        async with FakePlugin(c, name="Dashboard", key="KEY1", caps=CLOSE) as a, \
+                FakePlugin(c, name="UI kit", key="KEY2", caps=CLOSE) as b:
+            assert (await c.post("/exec", json={"code": "x", "target": "UI kit", "agent": "designer"})).status == 200
+            await asyncio.sleep(0.4)
+            await close_file(a, "doc:KEY2")
+            assert await until(lambda: b.of("close"))
+            assert a.of("close-refused") == []
+        await c.close()
+    run(go())
+
+
+def test_close_file_is_refused_for_an_older_window_or_a_file_not_open():
+    async def go():
+        c = await make_client()
+        async with FakePlugin(c, name="Dashboard", key="KEY1", caps=CLOSE) as a, \
+                FakePlugin(c, name="UI kit", key="KEY2", caps=CAPS) as b:
+            await close_file(a, "doc:KEY2")
+            await close_file(a, "doc:NOPE")
+            assert await until(lambda: len(a.of("close-refused")) == 2)
+            assert [(m["doc"], m["why"]) for m in a.of("close-refused")] == [
+                ("doc:KEY2", "an older build"), ("doc:NOPE", "not open")]
+            await settle()
+            assert b.of("close") == []
+        await c.close()
+    run(go())
+
+
+def test_a_window_that_doesnt_close_takes_scripts_again(monkeypatch):
+    monkeypatch.setattr(bridge_board, "CLOSE_WAIT", 0.4)
+
+    async def go():
+        c = await make_client()
+        async with FakePlugin(c, name="Dashboard", key="KEY1", caps=CLOSE) as a, \
+                FakePlugin(c, name="UI kit", key="KEY2", caps=CLOSE) as b:  # it never closes
+            await close_file(a, "doc:KEY2")
+            assert await until(lambda: b.of("close"))
+            assert (await c.post("/exec", json={"code": "x", "target": "UI kit"})).status == 409
+            await asyncio.sleep(0.5)
+            assert (await c.post("/exec", json={"code": "x", "target": "UI kit"})).status == 200
         await c.close()
     run(go())
 

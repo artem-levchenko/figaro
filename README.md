@@ -450,9 +450,11 @@ until a script of its succeeds. A file where Figma stops answering, with a
 script still running long after its time or a window that closed while one ran,
 turns red in every window, with what to do.
 Point at an agent at work for its **Stop** button. A click on a changed layer selects it
-in Figma. Under the islands, a line with Figaro's version: a new release with
-its **Update** button, **Reload** for a new build of the plugin, or a yellow
-**!** when an update failed: click it to see why. On its right, ⚙ opens the
+in Figma. Point at an island for its **✕**: it closes Figaro in that file, and the
+file stays open in Figma (not while an agent is at work there). Under the islands,
+a line with Figaro's version: a new release with its **Update** button, **Reload**
+for a new build of the plugin, or a yellow **!** when an update failed: click it
+to see why. On its right, ⚙ opens the
 [settings](#settings), and ⤡ minimizes the window to one card; hold it for an
 even smaller one. The window answers what you press with short, quiet sounds,
 and knocks twice when Figma stops answering in its own file.

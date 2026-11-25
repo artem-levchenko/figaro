@@ -108,6 +108,7 @@ function load({ calm = false, layout = null, figma = null } = {}) {
   }
   const elements = {};
   const listeners = {};
+  let hovered = null;  // what the pointer is on (env.hover): {fid, onX}
   const htmlClasses = new Set();  // <html>'s own classes: the rainbow's
   const document = {
     documentElement: { classList: { toggle: (c) => (htmlClasses.has(c) ? htmlClasses.delete(c) : htmlClasses.add(c)), contains: (c) => htmlClasses.has(c) } },
@@ -116,6 +117,14 @@ function load({ calm = false, layout = null, figma = null } = {}) {
     }),
     visibilityState: "hidden",
     body: { style: {} },
+    // what is under the pointer: an island's row, or its ✕
+    elementFromPoint: () => {
+      if (!hovered) return null;
+      const island = { classList: { add() {}, remove() {} } };
+      const slot = { dataset: { fid: hovered.fid }, querySelector: (sel) => (sel === ".island" ? island : null) };
+      const x = { classList: { add() {}, remove() {} } };
+      return { closest: (sel) => (sel === ".slot[data-fid]" ? slot : sel === ".cx[data-act]" && hovered.onX ? x : null) };
+    },
     addEventListener(type, fn) { (listeners[type] = listeners[type] || []).push(fn); },
   };
   const window = { matchMedia: (q) => ({ matches: calm && /reduce/.test(q) }), innerHeight: layout ? layout.window : 0 };
@@ -208,6 +217,12 @@ function load({ calm = false, layout = null, figma = null } = {}) {
     enter() {
       const el = { dataset: { field: "figma-token" } };
       for (const fn of listeners.keydown || []) fn({ key: "Enter", target: el });
+    },
+    // The pointer moves onto an island (its id), on its ✕ or not; null: out of the window.
+    hover(fid, onX = false) {
+      hovered = fid === null ? null : { fid, onX };
+      if (fid === null) for (const fn of listeners.pointerout || []) fn({ relatedTarget: null, target: {} });
+      else for (const fn of listeners.pointermove || []) fn({ clientX: 100, clientY: 20 });
     },
     // The pointer on an agent's row, or with no agent anywhere else in the window.
     point(fid, name) {
@@ -1705,6 +1720,165 @@ const RELEASE = "https://github.com/artem-levchenko/figaro/releases/tag/v1.2.0";
           [/<span class="layer"><svg/.test(env.app()), /rv-all/.test(env.app()), /data-act="layer" data-id="1:2"/.test(env.app())], [true, false, false]);
     env.click("rv-send", "doc:KEY2");
     check("…Send names its file", env.sent("review-answer"), [{ type: "review-answer", doc: "doc:KEY2", send: ["n1"], at: 1000 }]);
+  }
+
+
+  // ─── closing Figaro in a file ───────────────────────────────────────────
+  {
+    const env = load();
+    const ago = (sec) => 1000 + env.clock.now() / 1000 - sec;
+    env.identity("Dashboard", "KEY1");
+    env.ws().open();
+    const X = /data-act="x-close"/g;
+    const xOf = (fid) => { const m = env.app().match(new RegExp(`data-fid="${fid}"><div class="island[^"]*"><div class="row[^"]*">.*?<div class="right">`)); return m ? m[0] : ""; };
+    env.board([file("KEY1", "Dashboard"), file("KEY2", "Kit"), file("KEY3", "Landing")]);
+    await env.clock.advance(400);
+    check("a bridge before the ✕: none on any island", env.app().match(X), null);
+    const closable = { closable: true };
+    const lostOne = Object.assign(file("KEY4", "Old"), { lost: { agent: "icons", at: ago(30) } });
+    env.board([file("KEY1", "Dashboard", closable), file("KEY2", "Kit", closable), file("KEY3", "Landing")], { lost: [lostOne] });
+    await env.clock.advance(400);
+    check("every island the bridge calls closable has its ✕ left of the chevron, this file's too; an older window's file and a lost one have none",
+          [/class="row has-x">.*<\/button><button type="button" class="cx" data-act="x-close" aria-label="Close Figaro in this file"><svg[^>]*>.*?<\/svg><\/button><div class="right">$/.test(xOf("here")),
+           /data-act="x-close"/.test(xOf("doc:KEY2")), /data-act="x-close"/.test(xOf("doc:KEY3")), /data-act="x-close"/.test(xOf("doc:KEY4")),
+           /class="row">/.test(xOf("doc:KEY3"))],
+          [true, true, false, false, true]);
+
+    // the pointer on an island: kept by the window and drawn with it, so a redraw keeps the ✕ shown
+    env.hover("doc:KEY2");
+    env.board([file("KEY1", "Dashboard", closable), file("KEY2", "Kit", closable)]);
+    await env.clock.advance(400);
+    check("the pointer on an island: it is drawn with it (over), the others without",
+          [/data-fid="doc:KEY2"><div class="island over">/.test(env.app()), /data-fid="here"><div class="island">/.test(env.app())], [true, true]);
+    env.click("toggle", "doc:KEY2");
+    check("…opening, it keeps it in every drawing", /data-fid="doc:KEY2"><div class="island open opening over">/.test(env.app()), true);
+    await env.clock.advance(400);
+    check("…and open", /data-fid="doc:KEY2"><div class="island open over">/.test(env.app()), true);
+    env.click("toggle", "doc:KEY2");
+    check("…and closing", /data-fid="doc:KEY2"><div class="island closing over">/.test(env.app()), true);
+    await env.clock.advance(400);
+    env.hover("doc:KEY2", true);
+    env.board([file("KEY1", "Dashboard", closable), file("KEY2", "Kit", closable)], { now: 1001 });
+    await env.clock.advance(400);
+    check("on the ✕: it is drawn lit", /class="cx over" data-act="x-close"/.test(env.app()), true);
+    env.hover(null);
+    env.board([file("KEY1", "Dashboard", closable), file("KEY2", "Kit", closable)], { now: 1002 });
+    await env.clock.advance(400);
+    check("…out of the window: nothing is", /over/.test(env.app()), false);
+
+    // busy: an agent at work, the Reviewer checking, Figma not answering
+    const working = agent("icons", { since: ago(30), last: ago(10) });
+    const checking = { on: true, state: "checking", agent: "tokens", layers: 3, since: 1000, at: 1000, notes: [], expired: false, sent: 0, left: 0 };
+    env.board([file("KEY1", "Dashboard", closable), file("KEY2", "Kit", Object.assign({ agents: [working] }, closable)),
+      file("KEY3", "Landing", Object.assign({ reviewer: checking }, closable)),
+      file("KEY5", "Tokens", Object.assign({ stuck: { agent: "copy", since: ago(60) } }, closable))], { settings: { reviewer: true } });
+    await env.clock.advance(400);
+    const off = (fid) => /class="cx" data-act="x-close" aria-label="Can't close while an agent is working" aria-disabled="true"/.test(xOf(fid));
+    check("an agent at work, the Reviewer checking, Figma not answering: the ✕ is faint and says why; a quiet file's isn't",
+          [off("doc:KEY2"), off("doc:KEY3"), off("doc:KEY5"), off("here")], [true, true, true, false]);
+    env.click("x-close", "doc:KEY2");
+    env.click("x-close", "doc:KEY3");
+    check("…and a click on it does nothing", [env.sent("close-file"), /cx going/.test(env.app())], [[], false]);
+    await env.clock.advance(6 * MIN);
+    check("the agent quiet past its time: its ✕ works again", off("doc:KEY2"), false);
+
+    // another file: the bridge closes it there; a spinner until its island goes
+    env.board([file("KEY1", "Dashboard", closable), file("KEY2", "Kit", closable), file("KEY3", "Landing", closable)]);
+    await env.clock.advance(400);
+    env.heard();
+    env.click("x-close", "doc:KEY2");
+    await env.clock.advance(50);
+    check("a click: the bridge is asked to close Figaro there, with the closing sound, go's notes going down",
+          [env.sent("close-file"), env.heard()], [[{ type: "close-file", doc: "doc:KEY2" }], ["sine 523", "sine 415", "sine 330"]]);
+    const spinner = (fid) => /class="row has-x x-wait">.*<button type="button" class="cx going" aria-label="Closing Figaro in this file" aria-disabled="true" tabindex="-1"><span class="spin"><\/span><\/button>/.test(xOf(fid));
+    check("…a grey spinner takes the ✕'s place, the name faded under it, and no button to press again",
+          [spinner("doc:KEY2"), /data-act="x-close"/.test(xOf("doc:KEY2"))], [true, false]);
+    env.click("x-close", "doc:KEY2");
+    check("…a second click asks nothing more", env.sent("close-file").length, 1);
+    env.board([file("KEY1", "Dashboard", closable), file("KEY2", "Kit", closable), file("KEY3", "Landing", closable)], { now: 1003 });
+    await env.clock.advance(400);
+    check("…the window draws the islands anew meanwhile: the spinner stays", spinner("doc:KEY2"), true);
+    env.board([file("KEY1", "Dashboard", closable), file("KEY3", "Landing", closable)]);
+    check("its window gone, its island shrinks out with the spinner still on",
+          [/data-fid="doc:KEY2" ?/.test(env.app()), /class="slot leave" data-fid="doc:KEY2"/.test(env.app()), spinner("doc:KEY2")], [true, true, true]);
+    await env.clock.advance(400);
+    check("…and goes", [/doc:KEY2/.test(env.app()), env.posted.filter((m) => m.type === "close")], [false, []]);
+    env.board([file("KEY1", "Dashboard", closable), file("KEY2", "Kit", closable), file("KEY3", "Landing", closable)], { now: 1004 });
+    await env.clock.advance(400);
+    check("…Figaro run there again at once: its island comes back with its ✕", [spinner("doc:KEY2"), /data-act="x-close"/.test(xOf("doc:KEY2"))], [false, true]);
+    env.board([file("KEY1", "Dashboard", closable), file("KEY3", "Landing", closable)], { now: 1005 });
+    await env.clock.advance(400);
+
+    // the bridge says no: an agent began a script meanwhile
+    env.click("x-close", "doc:KEY3");
+    check("the spinner…", spinner("doc:KEY3"), true);
+    env.ws().receive({ type: "close-refused", doc: "doc:KEY3", why: "an agent is working" });
+    await env.clock.advance(400);
+    check("…the bridge refuses: the ✕ comes back", [spinner("doc:KEY3"), /data-act="x-close"/.test(xOf("doc:KEY3"))], [false, true]);
+
+    // a window that doesn't close: its ✕ comes back a while later
+    env.click("x-close", "doc:KEY3");
+    await env.clock.advance(9000);
+    check("a file whose window hasn't closed: still the spinner after 9 s", spinner("doc:KEY3"), true);
+    await env.clock.advance(1500);
+    check("…its ✕ back after 10 s, the island still there", [spinner("doc:KEY3"), /data-act="x-close"/.test(xOf("doc:KEY3"))], [false, true]);
+
+    // this file: the window closes itself, once its sound has played; the bridge isn't asked
+    env.ws().sent.length = 0;
+    env.click("x-close", "here");
+    await env.clock.advance(200);
+    check("this file's ✕: a spinner, and the window not closed yet while its sound plays",
+          [spinner("here"), env.posted.filter((m) => m.type === "close")], [true, []]);
+    await env.clock.advance(200);
+    check("…then it closes itself, as at Figma's close button", [env.posted.filter((m) => m.type === "close"), env.sent("close-file")], [[{ type: "close" }], []]);
+
+    // the bridge's word, from the ✕ in another window
+    env.ws().receive({ type: "close" });
+    check("the ✕ pressed in another window: the bridge's word closes this one", env.posted.filter((m) => m.type === "close").length, 2);
+  }
+  {
+    // sounds off: this file's window closes at once, in silence
+    const env = load();
+    env.identity("Dashboard", "KEY1");
+    env.ws().open();
+    env.board([file("KEY1", "Dashboard", { closable: true })], { sounds: false });
+    await env.clock.advance(400);
+    env.heard();
+    env.click("x-close", "here");
+    await env.clock.advance(50);
+    check("sounds off: no sound, and this window closes at once", [env.heard(), env.posted.filter((m) => m.type === "close")], [[], [{ type: "close" }]]);
+  }
+  {
+    // this window runs a script: its own ✕ waits
+    const env = load();
+    env.identity("Dashboard", "KEY1");
+    env.ws().open();
+    env.board([file("KEY1", "Dashboard", { closable: true })]);
+    await env.clock.advance(400);
+    env.exec("e1");
+    env.board([file("KEY1", "Dashboard", { closable: true })], { now: 1001 });
+    await env.clock.advance(400);
+    env.click("x-close", "here");
+    check("a script running in this window: its ✕ is faint and does nothing",
+          [/aria-disabled="true">/.test(env.app()), env.posted.filter((m) => m.type === "close")], [true, []]);
+    env.answer("e1");
+    env.board([file("KEY1", "Dashboard", { closable: true })], { now: 1002 });
+    await env.clock.advance(400);
+    check("…the script over: it works", /data-act="x-close" aria-label="Close Figaro in this file">/.test(env.app()), true);
+  }
+  {
+    // minimized: no ✕
+    const env = load();
+    env.identity("Dashboard", "KEY1");
+    env.ws().open();
+    env.board([file("KEY1", "Dashboard", { closable: true }), file("KEY2", "Kit", { closable: true })]);
+    await env.clock.advance(400);
+    env.click("min");
+    await env.clock.advance(400);
+    check("mini: no ✕", /x-close|class="cx/.test(env.app()), false);
+    env.click("restore");
+    await env.clock.advance(400);
+    check("…restored: the ✕ again", (env.app().match(/data-act="x-close"/g) || []).length, 2);
   }
 
   console.log(failed ? `\n${failed} FAILED` : "\nall window checks passed");
