@@ -9,6 +9,8 @@ file; the release notes say when it has to be imported again.
 
 ## [Unreleased]
 
+## [1.13.0] — 2026-11-25
+
 ### Added
 
 - **Close Figaro in another file from the window.** Point at a file's island, and a ✕ shows left of its
