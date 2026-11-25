@@ -2503,15 +2503,23 @@ setInterval(() => {
 // ─── the bridge ──────────────────────────────────────────────────────────
 function connect() {
   clearTimeout(reconnectTimer);
+  let sock;
   try {
-    ws = new WebSocket(SERVER);
+    sock = ws = new WebSocket(SERVER);
   } catch (e) {
     log("[ws] new WebSocket failed: " + e.message);
     reconnectTimer = setTimeout(connect, 2000);
     return;
   }
 
-  ws.onopen = () => {
+  // Only the newest socket speaks for the window. Back in view, the window opens
+  // a new one while the old one may still be closing (visibilitychange below),
+  // and the old one's close comes later. Taken as the bridge going away, it
+  // stopped the tone and knocked a third time while the second socket stayed
+  // open: the bridge sent the file's scripts to the second and dropped their
+  // answers, which came on the third.
+  sock.onopen = () => {
+    if (sock !== ws) return;
     // A new bridge may have different code on disk; it says `outdated` and
     // `update` again at hello time, and sends its board.
     conn = "ok";
@@ -2527,7 +2535,8 @@ function connect() {
     schedule();
   };
 
-  ws.onmessage = (e) => {
+  sock.onmessage = (e) => {
+    if (sock !== ws) return;
     let msg;
     try { msg = JSON.parse(e.data); } catch (err) {
       log("[ws] bad message: " + err.message);
@@ -2581,7 +2590,8 @@ function connect() {
     }
   };
 
-  ws.onclose = () => {
+  sock.onclose = () => {
+    if (sock !== ws) return;
     // The bridge holds one slot per open file, so a close is always transient:
     // bridge restart, or this tab's socket dropped. Just reconnect.
     failures++;

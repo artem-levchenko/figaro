@@ -153,6 +153,8 @@ function load({ calm = false, layout = null, figma = null } = {}) {
     room: (height) => window.onmessage({ data: { pluginMessage: { type: "room", height } } }),
     asks: () => posted.filter((m) => m.type === "resize").map((m) => m.height),
     ws: () => sockets[sockets.length - 1],
+    // The window's tab comes back into view.
+    show: () => { document.visibilityState = "visible"; for (const fn of listeners.visibilitychange || []) fn({}); },
     tone: () => { const c = contexts.find((x) => x.oscs.some((o) => o.frequency.value === 20)); return c ? c.state : "none"; },
     heard: () => voices.splice(0),  // the sounds' layers since the last look
     audio,
@@ -355,6 +357,33 @@ const RELEASE = "https://github.com/artem-levchenko/figaro/releases/tag/v1.2.0";
     env.exec("e2");
     await env.clock.advance(300);
     check("…the next script brings it back", env.tone(), "running");
+  }
+
+  // ─── a socket that closes late ──────────────────────────────────────────
+  // Back in view while its socket is still closing, the window opens a new one at
+  // once. The old one's close comes later, and it is the past's: the new socket,
+  // the board and the tone stay.
+  {
+    const env = load();
+    const at = (since) => [file("KEY1", "Dashboard", { agents: [agent("a1", { busy: true, since, last: 999 })] })];
+    env.ws().open();
+    env.identity("Dashboard", "KEY1");
+    env.board(at(990));
+    env.exec("e1");
+    await env.clock.advance(300);
+    const old = env.ws();
+    old.readyState = 2;  // closing
+    env.show();
+    check("back in view while its socket closes: a new socket at once", env.sockets.length, 2);
+    env.ws().open();
+    env.board(at(990));
+    old.drop();
+    await env.clock.advance(5000);
+    check("…and the old one's late close leaves it be: no third socket, the agent at work, the tone on",
+          [env.sockets.length, /connecting…/.test(env.html()), /class="px"/.test(env.html()), env.tone()], [2, false, true, "running"]);
+    env.exec("e2");
+    await env.clock.advance(300);
+    check("…and scripts reach the sandbox through the new one", env.posted.filter((m) => m.type === "exec").map((m) => m.id), ["e1", "e2"]);
   }
 
   // ─── no bridge at all ───────────────────────────────────────────────────

@@ -9,6 +9,15 @@ file; the release notes say when it has to be imported again.
 
 ## [Unreleased]
 
+### Fixed
+
+- **A file's tab that comes back into view no longer leaves its window with two connections.** If the window's
+  connection to the bridge was still closing when its tab came back into view, the window opened a new one at
+  once, and the old one's close, coming later, was taken for the bridge going away: the window said
+  "connecting…", stopped the keep-awake tone and opened a third connection, while the second stayed open. The
+  bridge then sent that file's scripts to the second and got their answers on the third, which it doesn't
+  take: the scripts ran, and the agent got a timeout. Now only the newest connection speaks for the window.
+
 ## [1.13.0] — 2026-11-25
 
 ### Added
