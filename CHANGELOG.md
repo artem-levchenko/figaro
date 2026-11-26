@@ -9,6 +9,8 @@ file; the release notes say when it has to be imported again.
 
 ## [Unreleased]
 
+## [1.14.0] — 2026-11-26
+
 ### Changed
 
 - **An agent at work costs Figma far less.** While anything moves in the plugin's window, Figma draws the whole
