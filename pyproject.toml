@@ -1,9 +1,9 @@
-# Only for tools/install.ps1: on Windows, `pip install -e .` gives the venv a real
-# figaro.exe, which takes Figma links with `&` from any shell (a .cmd file would
-# hand them to cmd.exe, which cuts them at the `&`). The code runs from this
-# folder, so an install that is not editable would miss plugin/ and the scripts.
-# figaro.py finds the modules next to it by itself, so only it is listed here.
-# The packages it needs are in requirements.txt.
+# The package is only for tools/install.ps1: on Windows, `pip install -e .` gives
+# the venv a real figaro.exe, which takes Figma links with `&` from any shell (a
+# .cmd file would hand them to cmd.exe, which cuts them at the `&`). The code runs
+# from this folder, so an install that is not editable would miss plugin/ and the
+# scripts. figaro.py finds the modules next to it by itself, so only it is listed
+# here. The packages it needs are in requirements.txt.
 [build-system]
 requires = ["setuptools>=64"]
 build-backend = "setuptools.build_meta"
@@ -20,3 +20,7 @@ figaro = "figaro:main"
 
 [tool.setuptools]
 py-modules = ["figaro"]
+
+# A plain `pytest` collects tests/ only, whatever other folders the clone holds.
+[tool.pytest.ini_options]
+testpaths = ["tests"]
