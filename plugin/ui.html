@@ -160,7 +160,7 @@ svg [stroke="currentColor"] { vector-effect: non-scaling-stroke; stroke-width: 1
    at once, and a step restyles only the grids: the nine variables set on <html> itself restyled
    every element of the window on every step. The centre stays dim. */
 .px { --c: var(--run); flex: none; display: grid; grid-template-columns: repeat(3, 2.5px); gap: 1px; }
-.px i { width: 2.5px; height: 2.5px; border-radius: .5px; background: var(--c); opacity: var(--lit, .1); will-change: opacity; }
+.px i { width: 2.5px; height: 2.5px; border-radius: .5px; background: var(--c); opacity: var(--lit, .18); will-change: opacity; }
 .px i:nth-child(1) { --lit: var(--lit1); }
 .px i:nth-child(2) { --lit: var(--lit2); }
 .px i:nth-child(3) { --lit: var(--lit3); }
@@ -169,22 +169,22 @@ svg [stroke="currentColor"] { vector-effect: non-scaling-stroke; stroke-width: 1
 .px i:nth-child(7) { --lit: var(--lit7); }
 .px i:nth-child(8) { --lit: var(--lit8); }
 .px i:nth-child(9) { --lit: var(--lit9); }
-html[data-spin="f0"] .px { --lit1: 1; --lit4: .5; --lit7: .24; }
-html[data-spin="f1"] .px { --lit2: 1; --lit1: .5; --lit4: .24; }
-html[data-spin="f2"] .px { --lit3: 1; --lit2: .5; --lit1: .24; }
-html[data-spin="f3"] .px { --lit6: 1; --lit3: .5; --lit2: .24; }
-html[data-spin="f4"] .px { --lit9: 1; --lit6: .5; --lit3: .24; }
-html[data-spin="f5"] .px { --lit8: 1; --lit9: .5; --lit6: .24; }
-html[data-spin="f6"] .px { --lit7: 1; --lit8: .5; --lit9: .24; }
-html[data-spin="f7"] .px { --lit4: 1; --lit7: .5; --lit8: .24; }
-html[data-spin="b0"] .px { --lit1: 1; --lit2: .5; --lit3: .24; }
-html[data-spin="b1"] .px { --lit2: 1; --lit3: .5; --lit6: .24; }
-html[data-spin="b2"] .px { --lit3: 1; --lit6: .5; --lit9: .24; }
-html[data-spin="b3"] .px { --lit6: 1; --lit9: .5; --lit8: .24; }
-html[data-spin="b4"] .px { --lit9: 1; --lit8: .5; --lit7: .24; }
-html[data-spin="b5"] .px { --lit8: 1; --lit7: .5; --lit4: .24; }
-html[data-spin="b6"] .px { --lit7: 1; --lit4: .5; --lit1: .24; }
-html[data-spin="b7"] .px { --lit4: 1; --lit1: .5; --lit2: .24; }
+html[data-spin="f0"] .px { --lit1: 1; --lit4: .55; --lit7: .32; }
+html[data-spin="f1"] .px { --lit2: 1; --lit1: .55; --lit4: .32; }
+html[data-spin="f2"] .px { --lit3: 1; --lit2: .55; --lit1: .32; }
+html[data-spin="f3"] .px { --lit6: 1; --lit3: .55; --lit2: .32; }
+html[data-spin="f4"] .px { --lit9: 1; --lit6: .55; --lit3: .32; }
+html[data-spin="f5"] .px { --lit8: 1; --lit9: .55; --lit6: .32; }
+html[data-spin="f6"] .px { --lit7: 1; --lit8: .55; --lit9: .32; }
+html[data-spin="f7"] .px { --lit4: 1; --lit7: .55; --lit8: .32; }
+html[data-spin="b0"] .px { --lit1: 1; --lit2: .55; --lit3: .32; }
+html[data-spin="b1"] .px { --lit2: 1; --lit3: .55; --lit6: .32; }
+html[data-spin="b2"] .px { --lit3: 1; --lit6: .55; --lit9: .32; }
+html[data-spin="b3"] .px { --lit6: 1; --lit9: .55; --lit8: .32; }
+html[data-spin="b4"] .px { --lit9: 1; --lit8: .55; --lit7: .32; }
+html[data-spin="b5"] .px { --lit8: 1; --lit7: .55; --lit4: .32; }
+html[data-spin="b6"] .px { --lit7: 1; --lit4: .55; --lit1: .32; }
+html[data-spin="b7"] .px { --lit4: 1; --lit1: .55; --lit2: .32; }
 /* A click on a grid, in an agent's row or an island's own, turns every grid in the window into a
    rainbow, a colour to each diagonal, whose light runs back, anticlockwise, and another click back
    (`rainbow` on <html>). Minimized, the grid is the card's restore. */

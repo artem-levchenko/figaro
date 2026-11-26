@@ -913,12 +913,12 @@ const RELEASE = "https://github.com/artem-levchenko/figaro/releases/tag/v1.2.0";
     check("no smooth animation on a grid or the word by it: one made Figma draw its window on every refresh of the screen",
           [/@keyframes (px|shim)\b/.test(html), /\n\.px i \{[^}]*animation/.test(html), /class="shim"/.test(html)], [false, false, false]);
     check("a cell takes its light from its grid, dim without it, and the centre has none",
-          [/\n\.px i \{[^}]*opacity: var\(--lit, \.1\);/.test(html),
+          [/\n\.px i \{[^}]*opacity: var\(--lit, \.18\);/.test(html),
            [...html.matchAll(/\n\.px i:nth-child\((\d)\) \{ --lit: var\(--lit(\d)\); \}/g)].filter((m) => m[1] === m[2]).map((m) => m[1]).join("")],
           [true, "12346789"]);
     const RING = [1, 2, 3, 6, 9, 8, 7, 4];  // the edge cells, clockwise from the top left one
     const lights = (back) => [0, 1, 2, 3, 4, 5, 6, 7].map((s) => JSON.stringify(SPIN[(back ? "b" : "f") + s])
-      === JSON.stringify({ [RING[s]]: "1", [RING[(s + (back ? 1 : 7)) % 8]]: ".5", [RING[(s + (back ? 2 : 6)) % 8]]: ".24" }));
+      === JSON.stringify({ [RING[s]]: "1", [RING[(s + (back ? 1 : 7)) % 8]]: ".55", [RING[(s + (back ? 2 : 6)) % 8]]: ".32" }));
     check("a step's rule, one for each of the head's eight places, lights the head and the two cells behind it, clockwise or back",
           [Object.keys(SPIN).length, lights(false).every(Boolean), lights(true).every(Boolean)], [16, true, true]);
     check("…and sets them on each grid, not on <html>: variables there restyled every element of the window on every step",
@@ -955,12 +955,12 @@ const RELEASE = "https://github.com/artem-levchenko/figaro/releases/tag/v1.2.0";
     for (let i = 0; i < 8; i++) { steps.push(head()); await env.clock.advance(125); }
     check("its light runs clockwise round the edge, a step every 125 ms, round in a second",
           [steps.every((h, i) => i === 0 || h === (steps[i - 1] + 1) % 8), head() === steps[0]], [true, true]);
-    check("…two dimmer cells behind it, the rest and the centre dim", tail(false), [".5", ".24", 3]);
+    check("…two dimmer cells behind it, the rest and the centre dim", tail(false), [".55", ".32", 3]);
     env.tapGrid();
     const was = head();
     await env.clock.advance(125);
     check("a rainbow's light runs back, anticlockwise, its tail on the other side",
-          [head(), tail(true)], [(was + 7) % 8, [".5", ".24", 3]]);
+          [head(), tail(true)], [(was + 7) % 8, [".55", ".32", 3]]);
     env.tapGrid();
     env.board([file("KEY1", "Dashboard", { agents: [agent("designer", { since: ago(30), last: ago(1), done: { text: "", at: ago(1) } })] })]);
     await env.clock.advance(400);
