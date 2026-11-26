@@ -378,10 +378,16 @@ sends it as `release` instead of `update`, and the bridge refuses `update-now` (
   and marks `<html>` `figma-light` or `figma-dark`. The islands take their colours from the `--is-*` tokens in
   `ui.html`, which `html.figma-light` redefines: black islands in the dark theme, white ones with a hairline
   edge on a grey-blue ground in the light one.
+- **Motion in the window costs Figma a frame of its whole window on every refresh of the screen.** While a
+  CSS animation runs, `steps()` ones too, Figma draws the window anew at the display's rate: on a 75 Hz
+  display in a 5K HiDPI mode that is ~6 ms of CPU a frame, and the grid's old smooth wave took ~45 % of a core
+  for as long as an agent was at work (measured live). So what moves while agents work steps on the window's
+  own timer (`spinStep`, 8 a second, the clocks on the same beat), and a clock's text is written only when it
+  changes. A transition that ends, as an island's opening, costs only its own frames.
 - **The keep-awake tone.** While scripts run, the window plays an inaudible tone (20 Hz, −66 dBFS); without it
   Chromium throttles a background Figma to up to a minute per step. Meanwhile macOS doesn't sleep
-  (`pmset -g assertions` shows Figma "Playing audio"). The tone stops 3 minutes after the last script ends
-  (a script whose answer never comes, after its `--timeout` and those 3 minutes) or ~2 s after the bridge
+  (`pmset -g assertions` shows Figma "Playing audio"). The tone stops a minute after the last script ends
+  (a script whose answer never comes, after its `--timeout` and that minute) or ~2 s after the bridge
   goes away — that is why the bridge closes the plugins' connections on exit (`bridge_idle.close_plugins`).
 - **The window's sounds** (`CUES` in `ui.html`) play in an AudioContext of their own, apart from the tone's,
   and it sleeps 3 s after the last one, or after the pointer goes still. Waking it takes the system tens of ms

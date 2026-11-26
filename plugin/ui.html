@@ -150,32 +150,31 @@ button { font: inherit; }
 .dot.idle, .spin.idle, .go .spin { filter: none; }
 /* A line icon keeps a 1.3 px line at any size. */
 svg [stroke="currentColor"] { vector-effect: non-scaling-stroke; stroke-width: 1.3px; }
-/* An agent at work: a 3x3 pixel grid with a diagonal wave, from the top left cell to
-   the bottom right one, and a shimmer sweeping over the word. A cell's delay is
-   its row plus its column, a quarter of the wave's spread (half the cycle) per
-   step. The grid's cycle, 0.9 s, is half the shimmer's 1.8 s, so every grid and
-   shimmer keeps one beat (inStep). */
+/* An agent at work: a 3x3 pixel grid with a light that runs round its edge, clockwise from
+   the top left cell, two dimmer cells behind it, a step every 125 ms: round in a second. The
+   steps are the window's (spinStep), not an animation's: a smooth one made Figma draw its whole
+   window on every refresh of the screen, ~45 % of a core on a 75 Hz one while an agent worked,
+   and a step is one frame. A cell takes its light from <html>'s --lit1 … --lit9, which every
+   step sets, so a grid drawn anew is on the beat at once; the centre stays dim. */
 .px { --c: var(--run); flex: none; display: grid; grid-template-columns: repeat(3, 2.5px); gap: 1px; }
-.px i { width: 2.5px; height: 2.5px; border-radius: .5px; background: var(--c); opacity: .18; animation: px 900ms ease-in-out infinite; }
-.px i:nth-child(1) { animation-delay: 0ms; }
-.px i:nth-child(2), .px i:nth-child(4) { animation-delay: 112.5ms; }
-.px i:nth-child(3), .px i:nth-child(5), .px i:nth-child(7) { animation-delay: 225ms; }
-.px i:nth-child(6), .px i:nth-child(8) { animation-delay: 337.5ms; }
-.px i:nth-child(9) { animation-delay: 450ms; }
+.px i { width: 2.5px; height: 2.5px; border-radius: .5px; background: var(--c); opacity: var(--lit, .1); will-change: opacity; }
+.px i:nth-child(1) { --lit: var(--lit1); }
+.px i:nth-child(2) { --lit: var(--lit2); }
+.px i:nth-child(3) { --lit: var(--lit3); }
+.px i:nth-child(4) { --lit: var(--lit4); }
+.px i:nth-child(6) { --lit: var(--lit6); }
+.px i:nth-child(7) { --lit: var(--lit7); }
+.px i:nth-child(8) { --lit: var(--lit8); }
+.px i:nth-child(9) { --lit: var(--lit9); }
 /* A click on a grid, in an agent's row or an island's own, turns every grid in the window into a
-   rainbow whose wave runs back, from the bottom right cell to the top left one, and another click
-   back (`rainbow` on <html>): only the colours and the delays change, the animation is the same.
-   Minimized, the grid is the card's restore. */
+   rainbow, a colour to each diagonal, whose light runs back, anticlockwise, and another click back
+   (`rainbow` on <html>). Minimized, the grid is the card's restore. */
 .agent .px, .island .tg .px { padding: 3px; margin: -3px; }
-html.rainbow .px i:nth-child(1) { --c: hsl(0 85% 58%); animation-delay: 450ms; }
-html.rainbow .px i:nth-child(2), html.rainbow .px i:nth-child(4) { --c: hsl(35 95% 55%); animation-delay: 337.5ms; }
+html.rainbow .px i:nth-child(1) { --c: hsl(0 85% 58%); }
+html.rainbow .px i:nth-child(2), html.rainbow .px i:nth-child(4) { --c: hsl(35 95% 55%); }
 html.rainbow .px i:nth-child(3), html.rainbow .px i:nth-child(5), html.rainbow .px i:nth-child(7) { --c: hsl(130 60% 48%); }
-html.rainbow .px i:nth-child(6), html.rainbow .px i:nth-child(8) { --c: hsl(210 90% 58%); animation-delay: 112.5ms; }
-html.rainbow .px i:nth-child(9) { --c: hsl(275 75% 62%); animation-delay: 0ms; }
-@keyframes px { 0%, 100% { opacity: .18; } 20% { opacity: 1; } 50% { opacity: .18; } }
-.shim { background: linear-gradient(90deg, var(--is-dim) 35%, var(--is-text) 50%, var(--is-dim) 65%) 0 0 / 200% 100%;
-  -webkit-background-clip: text; background-clip: text; color: transparent; animation: shim 1.8s linear infinite; }
-@keyframes shim { from { background-position: 150% center; } to { background-position: -50% center; } }
+html.rainbow .px i:nth-child(6), html.rainbow .px i:nth-child(8) { --c: hsl(210 90% 58%); }
+html.rainbow .px i:nth-child(9) { --c: hsl(275 75% 62%); }
 .lbl { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; white-space: nowrap; }
 .lbl b { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; font-weight: 600; }
 .lbl .sub { flex: 0 4 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--is-dim); font-variant-numeric: tabular-nums; }
@@ -552,8 +551,7 @@ body > .ghost { position: fixed; right: 0; bottom: 0; z-index: 5; display: flex;
   .agent[data-agent], .act, .act .ib, .foot .skip, .tip, .tl, .tl .ic, .tl .ring circle, .sw, .sw::after, .cx, #xtip, .row.has-x .lbl { transition: none; }
   .mini.enter { animation: none; }
   .spin { animation-duration: 2.4s; }
-  .px i { animation: none; opacity: .6; }
-  .shim { animation: none; background: none; color: inherit; }
+  .px i { opacity: .6; }
 }
 </style>
 </head>
@@ -595,9 +593,11 @@ function send(msg) {
 // agents work this window plays a 20 Hz tone at -66 dBFS: nobody hears it, and
 // Chromium counts it as sound (a silent stream does not count). It plays
 // while scripts run and stops AWAKE_IDLE_MS after the last one ends, because a
-// playing page also keeps macOS from idle sleep, and it stops at once when the
-// bridge goes away: it plays only while the bridge is up (tests/ui.test.js).
-const AWAKE_IDLE_MS = 3 * 60 * 1000;
+// playing page also keeps macOS from idle sleep and costs the system's audio
+// ~6 % of a core; and it stops at once when the bridge goes away: it plays only
+// while the bridge is up (tests/ui.test.js). A minute covers most of an agent's
+// pauses between scripts; a script after a longer one waits AWAKE_SETTLE_MS.
+const AWAKE_IDLE_MS = 60 * 1000;
 const AWAKE_SETTLE_MS = 250;  // until Chromium notices the sound and lifts throttling
 const AWAKE_RESUME_MS = 500;  // a page not allowed to play sound never resumes — don't wait for it
 let audio = null;
@@ -1226,7 +1226,7 @@ function agentRow(f, a) {
   let st, act = "", msg = "", cls = "agent", data = "";
   const err = a.error ? `<p class="msg err">${a.error.line ? `Line ${a.error.line}: ` : ""}${esc(a.error.text)}</p>` : "";
   if (a.st === "working") {
-    st = `${LOADER}<span><span class="shim">working</span> ${clockSpan(a.since)}</span>`;
+    st = `${LOADER}<span>working ${clockSpan(a.since)}</span>`;
     msg = err;
     if (f.doc) {
       const pressed = stopping.has(f.doc + "\n" + a.name);
@@ -1274,7 +1274,7 @@ function reviewerRow(f, r) {
   const checking = r.state === "checking";
   const avatar = r.state === "off" ? `<span class="av ghost rvi">${LENS}</span>` : `<span class="av rvi" style="--av: ${color("reviewer")}">${LENS}</span>`;
   const n = r.notes.length;
-  const st = checking ? `${LOADER}<span><span class="shim">checking</span>${r.layers ? " " + plural(r.layers, "layer", "layers") : ""}</span>`
+  const st = checking ? `${LOADER}<span>checking${r.layers ? " " + plural(r.layers, "layer", "layers") : ""}</span>`
     : r.state === "off" ? "off" : r.state === "waiting" ? "waits for agents"
     : r.state === "notes" ? `${badge("caution")}${plural(n, "note", "notes")} for you`
     : r.state === "sent" ? (r.sent ? "sent " + plural(r.sent, "fix", "fixes") : "all fine") + (r.sent && r.left ? ` · ${r.left} left as is` : "")
@@ -1912,7 +1912,7 @@ function render() {
     lastFoot = tail;
     placeTips();
   }
-  inStep();
+  spinning();
   if (moving) {
     animUntil = Date.now() + ANIM_MS;
     clearTimeout(later);
@@ -1947,7 +1947,7 @@ function renderView() {
     lastFoot = tail;
   }
   placeTips();
-  inStep();
+  spinning();
   if (enter) {
     animUntil = viewSince + ANIM_MS;
     clearTimeout(later);
@@ -1956,16 +1956,38 @@ function renderView() {
   fit();
 }
 
-// Every pixel grid and shimmer keeps one beat, however late it was drawn: their
-// animations count from the page's start, not each from its own. After a
-// redraw, and whenever one starts anew without one (a page that was hidden).
-function inStep() {
-  if (typeof document.getAnimations !== "function") return;
-  for (const a of document.getAnimations()) {
-    if ((a.animationName === "px" || a.animationName === "shim") && a.startTime !== 0) a.startTime = 0;
+// The grids' light (see .px): one beat for every grid in the window, a step
+// every SPIN_MS, clockwise, or back in a rainbow. A step sets <html>'s
+// --lit1 … --lit9, the head and the cells behind it, and moves the clocks too
+// (tickClocks), so Figma draws one frame a step and none between them. It runs
+// while the window shows a grid, and never for those who ask for less motion:
+// their grids stand half lit.
+const SPIN_MS = 125;
+const RING = [1, 2, 3, 6, 9, 8, 7, 4];  // the edge cells, clockwise from the top left one
+const TAIL = ["1", ".5", ".24"];         // the head, then the cells behind it
+let spinAt = 0;
+let spinTimer = null;
+function spinStep() {
+  const root = document.documentElement;
+  const back = root.classList.contains("rainbow");
+  spinAt = (spinAt + (back ? RING.length - 1 : 1)) % RING.length;
+  RING.forEach((cell, i) => {
+    const behind = ((back ? i - spinAt : spinAt - i) + RING.length) % RING.length;
+    if (behind < TAIL.length) root.style.setProperty("--lit" + cell, TAIL[behind]);
+    else root.style.removeProperty("--lit" + cell);
+  });
+  tickClocks();
+  spinTimer = setTimeout(spinStep, SPIN_MS);
+}
+// After every redraw: the beat starts when a grid shows and stops when none does.
+function spinning() {
+  const on = String(lastHtml || "").includes('class="px"') && !calm();
+  if (on && spinTimer === null) spinTimer = setTimeout(spinStep, SPIN_MS);
+  else if (!on && spinTimer !== null) {
+    clearTimeout(spinTimer);
+    spinTimer = null;
   }
 }
-document.addEventListener("animationstart", (e) => { if (e.animationName === "px" || e.animationName === "shim") inStep(); });
 
 // The window follows its islands: it asks the sandbox (code.js) for the height
 // of all of them and the line under them, and the sandbox puts it where that
@@ -2493,9 +2515,15 @@ function signature() {
   return filesNow().map((f) => [f.id, shown(f), headline(f).kind,
     agentsOf(f).map((a) => a.name + ":" + a.st).join()].join("|")).join("\n");
 }
+// A clock or an "ago" is written only when its text changes, as every write is
+// a frame for Figma; while the grids' light runs, it moves them on its beat.
+const setText = (el, text) => { if (el.textContent !== text) el.textContent = text; };
+function tickClocks() {
+  for (const el of app.querySelectorAll("[data-clock]")) setText(el, clock(+el.dataset.clock));
+  for (const el of app.querySelectorAll("[data-ago]")) setText(el, el.dataset.long ? agoLong(+el.dataset.ago) : ago(+el.dataset.ago));
+}
 setInterval(() => {
-  for (const el of app.querySelectorAll("[data-clock]")) el.textContent = clock(+el.dataset.clock);
-  for (const el of app.querySelectorAll("[data-ago]")) el.textContent = el.dataset.long ? agoLong(+el.dataset.ago) : ago(+el.dataset.ago);
+  if (spinTimer === null) tickClocks();
   if (signature() !== lastSig) schedule();
   fit(true);  // the window may have moved, or the canvas changed: the sandbox checks its place
 }, 1000);

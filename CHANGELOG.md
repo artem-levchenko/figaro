@@ -9,6 +9,17 @@ file; the release notes say when it has to be imported again.
 
 ## [Unreleased]
 
+### Changed
+
+- **An agent at work costs Figma far less.** While anything moves in the plugin's window, Figma draws the whole
+  window again on every refresh of the screen, and the wave in the pixel grid and the shimmer over "working"
+  moved all the time an agent was at work: on a 75 Hz display that took Figma about 45 % of a processor core.
+  Now a light runs round the grid's edge, a step every 125 ms, and the word stands still: Figma draws 8 frames a
+  second instead of 75, and the clock moves on the same beat.
+- **The keep-awake tone stops a minute after the last script, not three.** While it plays, the system's audio
+  takes a few percent of a core and the computer doesn't sleep. A minute covers most pauses between an agent's
+  scripts; a script after a longer one waits a quarter of a second for the tone to start.
+
 ### Fixed
 
 - **A file's tab that comes back into view no longer leaves its window with two connections.** If the window's

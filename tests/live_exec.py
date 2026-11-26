@@ -1,7 +1,7 @@
 """The exec core against live Figma — run by hand, not by pytest. macOS.
 
     FIGARO_TEST_FILE=<key or link> venv/bin/python tests/live_exec.py          # ~15 s
-    FIGARO_TEST_FILE=<key or link> venv/bin/python tests/live_exec.py --idle   # + the tone stops (~4 min)
+    FIGARO_TEST_FILE=<key or link> venv/bin/python tests/live_exec.py --idle   # + the tone stops (~2 min)
 
 Only in a scratch file of your own (tests/live_file.py): it makes a frame
 "figaro-live" far off the canvas on the current page, changes it, has a
@@ -200,9 +200,9 @@ return 1;""")
     check("clean: no figaro-live nodes left", read(f"return {FIND}.length;") == 0)
 
     if "--idle" in sys.argv:
-        print("  …waiting 3.5 min with no scripts for the tone to stop")
-        time.sleep(210)
-        check("the tone stopped after 3 min idle", not awake_assertion())
+        print("  …waiting 1.5 min with no scripts for the tone to stop")
+        time.sleep(90)
+        check("the tone stopped after 1 min idle", not awake_assertion())
 
     print(f"\n{failed} FAILED" if failed else "\nall live checks passed")
     sys.exit(1 if failed else 0)

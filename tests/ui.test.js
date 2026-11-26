@@ -1,7 +1,7 @@
 // The plugin window (plugin/ui.html) against stubs of the browser.
 //
 // The keep-awake tone starts with a request from the bridge, plays while it
-// runs, stops 3 min after the last one ends, and stops at once when the bridge
+// runs, stops a minute after the last one ends, and stops at once when the bridge
 // goes away: it never plays while the bridge is down. The islands show what the bridge's `board` says —
 // each agent at work, done, stopped or failed, and the error of its last script
 // until one succeeds — the line under them, always at the bottom, the Figaro
@@ -26,7 +26,7 @@ const script = html.slice(html.indexOf("<script>") + "<script>".length, html.las
 
 const flush = () => new Promise((r) => setImmediate(r));
 
-// Timers on a fake clock, so the 3-minute idle runs in no time.
+// Timers on a fake clock, so the idle minute runs in no time.
 function makeClock() {
   let now = 0, next = 1;
   const timers = new Map();
@@ -110,8 +110,10 @@ function load({ calm = false, layout = null, figma = null } = {}) {
   const listeners = {};
   let hovered = null;  // what the pointer is on (env.hover): {fid, onX}
   const htmlClasses = new Set();  // <html>'s own classes: the rainbow's
+  const lit = {};                  // <html>'s --lit1 … --lit9: the grids' light
   const document = {
-    documentElement: { classList: { toggle: (c) => (htmlClasses.has(c) ? htmlClasses.delete(c) : htmlClasses.add(c)), contains: (c) => htmlClasses.has(c) } },
+    documentElement: { classList: { toggle: (c) => (htmlClasses.has(c) ? htmlClasses.delete(c) : htmlClasses.add(c)), contains: (c) => htmlClasses.has(c) },
+                       style: { setProperty: (k, v) => { lit[k] = v; }, removeProperty: (k) => { delete lit[k]; } } },
     getElementById: (id) => (elements[id] = elements[id] || {
       textContent: "", innerHTML: "", querySelectorAll: () => [],
     }),
@@ -182,7 +184,7 @@ function load({ calm = false, layout = null, figma = null } = {}) {
                    closest: (sel) => (sel === "[data-fid]" ? slot : null) };
       for (const fn of listeners.click || []) fn({ detail, target: { closest: (sel) => (sel === "[data-act]" ? el : null) } });
     },
-    // A click on a grid of the wave: in an agent's row, in an island's own row (inside its toggle),
+    // A click on a pixel grid: in an agent's row, in an island's own row (inside its toggle),
     // or in the minimized card (inside its restore).
     tapGrid(where = "agent") {
       const holder = where === "agent" ? null : {
@@ -195,6 +197,8 @@ function load({ calm = false, layout = null, figma = null } = {}) {
       }
     },
     rainbow: () => htmlClasses.has("rainbow"),
+    // the grids' light: {cell: opacity} of the cells it lights
+    lit: () => Object.fromEntries(Object.entries(lit).map(([k, v]) => [Number(k.replace("--lit", "")), v])),
     // The pointer pressed on Minimize; let go on it, or off it.
     press() {
       const cls = new Set();
@@ -314,30 +318,30 @@ const RELEASE = "https://github.com/artem-levchenko/figaro/releases/tag/v1.2.0";
     check("…and reaches the sandbox once the window is awake",
           env.posted.filter((m) => m.type === "exec").map((m) => m.id), ["e1"]);
     env.answer("e1");
-    await env.clock.advance(2 * MIN);
+    await env.clock.advance(40 * 1000);
     env.exec("e2");
     await env.clock.advance(300);
     env.answer("e2");
-    await env.clock.advance(2 * MIN);
-    check("each script keeps it up 3 more minutes", env.tone(), "running");
-    await env.clock.advance(1 * MIN);
-    check("3 min after the last script it stops", env.tone(), "suspended");
+    await env.clock.advance(40 * 1000);
+    check("each script keeps it up a minute more", env.tone(), "running");
+    await env.clock.advance(20 * 1000);
+    check("a minute after the last script it stops", env.tone(), "suspended");
   }
   {
     const env = load();
     env.ws().open();
     env.exec("long", 600);
     await env.clock.advance(5 * MIN);
-    check("a script that runs longer than 3 min keeps it up", env.tone(), "running");
+    check("a script that runs longer than a minute keeps it up", env.tone(), "running");
     env.answer("long");
-    await env.clock.advance(3 * MIN - 1000);
-    check("…until 3 min after it ends", env.tone(), "running");
+    await env.clock.advance(MIN - 1000);
+    check("…until a minute after it ends", env.tone(), "running");
     await env.clock.advance(2000);
     check("…and then it stops", env.tone(), "suspended");
 
     env.exec("lost", 60);
-    await env.clock.advance(4 * MIN - 1000);
-    check("a script whose answer never comes keeps it up 3 min past its time", env.tone(), "running");
+    await env.clock.advance(2 * MIN - 1000);
+    check("a script whose answer never comes keeps it up a minute past its time", env.tone(), "running");
     await env.clock.advance(2000);
     check("…not longer", env.tone(), "suspended");
   }
@@ -406,7 +410,7 @@ const RELEASE = "https://github.com/artem-levchenko/figaro/releases/tag/v1.2.0";
   // ─── this file's island ─────────────────────────────────────────────────
   // (The stubs have no layout: what keeps an island as narrow as the window,
   // whatever its names, is in the CSS.)
-  check("the rainbow colours each diagonal of the wave, all nine cells",
+  check("the rainbow colours each diagonal of the grid, all nine cells",
         (html.match(/html\.rainbow \.px i:nth-child\(\d\)/g) || []).length, 9);
   check("an island is never wider than the window, however long the names in its row",
         /\n\.island \{[^}]*\bmin-width: 0;[^}]*overflow: clip;/.test(html), true);
@@ -897,25 +901,14 @@ const RELEASE = "https://github.com/artem-levchenko/figaro/releases/tag/v1.2.0";
     check("its scripts still show in this file's island", /designer/.test(env.html()), true);
   }
 
-  // ─── the grid's wave runs along the diagonal; the sounds are ours ─────────
+  // ─── the grid's light steps, nothing moves smoothly; the sounds are ours ──
   {
-    const cell = {};
-    for (const m of html.matchAll(/\.px i((?::nth-child\(\d\)(?:, \.px i)?)+) \{ animation-delay: ([\d.]+)ms/g)) {
-      for (const n of m[1].matchAll(/nth-child\((\d)\)/g)) cell[n[1]] = Number(m[2]);
-    }
-    const want = {};
-    for (let n = 1; n <= 9; n++) want[n] = ((Math.floor((n - 1) / 3) + (n - 1) % 3) / 4) * 0.5 * 900;
-    check("the grid's delays follow the diagonal, 0 to 450 ms", cell, want);
-    const back = Object.assign({}, cell);  // the rainbow's: the middle diagonal keeps its delay
-    for (const m of html.matchAll(/((?:html\.rainbow \.px i:nth-child\(\d\)(?:, )?)+) \{ --c: [^;]+;(?: animation-delay: ([\d.]+)ms;)? \}/g)) {
-      if (m[2] !== undefined) for (const n of m[1].matchAll(/nth-child\((\d)\)/g)) back[n[1]] = Number(m[2]);
-    }
-    const wantBack = {};
-    for (let n = 1; n <= 9; n++) wantBack[n] = 450 - want[n];
-    check("the rainbow's wave runs back, from the bottom right cell, 450 to 0 ms", back, wantBack);
-    check("the grid's cycle is 0.9 s, on the beat of the 1.8 s shimmer",
-          [/animation: px 900ms ease-in-out infinite/.test(html), /animation: shim 1\.8s /.test(html)], [true, true]);
-    check("the grid's keyframes", /@keyframes px \{ 0%, 100% \{ opacity: \.18; \} 20% \{ opacity: 1; \} 50% \{ opacity: \.18; \} \}/.test(html), true);
+    check("no smooth animation on a grid or the word by it: one made Figma draw its window on every refresh of the screen",
+          [/@keyframes (px|shim)\b/.test(html), /\n\.px i \{[^}]*animation/.test(html), /class="shim"/.test(html)], [false, false, false]);
+    check("a cell takes its light from <html>, dim without it, and the centre has none",
+          [/\n\.px i \{[^}]*opacity: var\(--lit, \.1\);/.test(html),
+           [...html.matchAll(/\n\.px i:nth-child\((\d)\) \{ --lit: var\(--lit(\d)\); \}/g)].filter((m) => m[1] === m[2]).map((m) => m[1]).join("")],
+          [true, "12346789"]);
     check("open and close sweep a sine between 440 and 660 Hz",
           [/open: \[\{ src: "sine", hz: \[440, 660\], env: \[0\.002, 0\.1, 0\.03\], gain: 0\.4 \}\]/.test(html),
            /close: \[\{ src: "sine", hz: \[660, 440\], env: \[0\.002, 0\.1, 0\.03\], gain: 0\.4 \}\]/.test(html)], [true, true]);
@@ -925,7 +918,7 @@ const RELEASE = "https://github.com/artem-levchenko/figaro/releases/tag/v1.2.0";
     check("the cues' volume", /const CUE_VOLUME = 0\.30;/.test(html), true);
   }
 
-  // ─── at work: a pixel grid, and the word shimmers ───────────────────────
+  // ─── at work: a pixel grid whose light runs round its edge ──────────────
   {
     const env = load();
     const ago = (sec) => 1000 + env.clock.now() / 1000 - sec;
@@ -937,8 +930,39 @@ const RELEASE = "https://github.com/artem-levchenko/figaro/releases/tag/v1.2.0";
     check("an agent at work: a 3x3 pixel grid by the file's name", [grids(), /class="spin"/.test(env.html())], [1, false]);
     env.click("toggle", "here");
     await env.clock.advance(400);
-    check("…and open, one by the agent too, with the word shimmering and the clock steady",
-          [grids(), /<span><span class="shim">working<\/span> <span[^>]*data-clock/.test(env.html())], [2, true]);
+    check("…and open, one by the agent too, the word still and its clock by it",
+          [grids(), /<span>working <span[^>]*data-clock/.test(env.html())], [2, true]);
+    const RING = [1, 2, 3, 6, 9, 8, 7, 4];  // the edge cells, clockwise from the top left one
+    const head = () => RING.indexOf(Number(Object.keys(env.lit()).find((c) => env.lit()[c] === "1")));
+    const tail = (back) => { const h = head(), at = (k) => RING[(h + (back ? k : -k) + 8) % 8];
+                             return [env.lit()[at(1)], env.lit()[at(2)], Object.keys(env.lit()).length]; };
+    const steps = [];
+    for (let i = 0; i < 8; i++) { steps.push(head()); await env.clock.advance(125); }
+    check("its light runs clockwise round the edge, a step every 125 ms, round in a second",
+          [steps.every((h, i) => i === 0 || h === (steps[i - 1] + 1) % 8), head() === steps[0]], [true, true]);
+    check("…two dimmer cells behind it, the rest and the centre dim", tail(false), [".5", ".24", 3]);
+    env.tapGrid();
+    const was = head();
+    await env.clock.advance(125);
+    check("a rainbow's light runs back, anticlockwise, its tail on the other side",
+          [head(), tail(true)], [(was + 7) % 8, [".5", ".24", 3]]);
+    env.tapGrid();
+    env.board([file("KEY1", "Dashboard", { agents: [agent("designer", { since: ago(30), last: ago(1), done: { text: "", at: ago(1) } })] })]);
+    await env.clock.advance(400);
+    const still = JSON.stringify(env.lit());
+    await env.clock.advance(1000);
+    check("no grid on show: no beat", [grids(), JSON.stringify(env.lit()) === still], [0, true]);
+  }
+  {
+    const env = load({ calm: true });
+    const ago = (sec) => 1000 + env.clock.now() / 1000 - sec;
+    env.identity("Dashboard", "KEY1");
+    env.ws().open();
+    env.board([file("KEY1", "Dashboard", { agents: [agent("designer", { since: ago(12), last: ago(1), busy: true })] })]);
+    await env.clock.advance(2000);
+    check("less motion: the grid stands half lit, and nothing steps",
+          [/<span class="px"/.test(env.html()), env.lit(), /@media \(prefers-reduced-motion: reduce\) \{[^@]*\n  \.px i \{ opacity: \.6; \}/.test(html)],
+          [true, {}, true]);
   }
 
   // ─── an open island with no agent at work ───────────────────────────────
@@ -1539,7 +1563,7 @@ const RELEASE = "https://github.com/artem-levchenko/figaro/releases/tag/v1.2.0";
 
     await show(env, rv({ state: "checking", layers: 24, since: 999 }), {}, {});
     check("checking: the grid, the count of layers, a Stop and no switch",
-          [/checking<\/span> 24 layers/.test(env.app()), /data-act="stop" data-agent="reviewer"/.test(env.app()),
+          [/(<i><\/i>){9}<\/span><span>checking 24 layers<\/span>/.test(env.app()), /data-act="stop" data-agent="reviewer"/.test(env.app()),
            /rv-toggle/.test(env.app()), /class="agent rv" data-agent="reviewer"/.test(env.app())], [true, true, false, true]);
     env.click("stop", "here", { agent: "reviewer" });
     check("…its Stop is the agents' Stop", env.sent("stop").slice(-1), [{ type: "stop", doc: "doc:KEY1", agent: "reviewer" }]);

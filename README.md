@@ -472,8 +472,8 @@ and knocks twice when Figma stops answering in its own file.
   file's key, so it never writes anything of its own into your design.
 - While scripts run, the plugin's window plays a tone you can't hear. Without it,
   Figma throttles a window in the background, and each step can take up to a
-  minute. The tone stops three minutes after the last script ends, or as soon
-  as the bridge stops.
+  minute. The tone stops a minute after the last script ends, or as soon as
+  the bridge stops.
 - The bridge and the command are Python, with `aiohttp`. The plugin is plain
   JavaScript and HTML, in `plugin/`.
 
@@ -566,7 +566,7 @@ at the first broken link it says what to do.
 | **Figma&nbsp;isn't&nbsp;answering** | The file is red in the plugin's window: a script there runs on long past its time, or the window closed while one ran. Reload the file in Figma (close its tab and open it again, or quit Figma if the tab won't close) and run Figaro in it |
 | **"Older&nbsp;build"** | The plugin in that file runs older code. Press **Reload** at the bottom of its window, or run `figaro reload -T <file>` |
 | **zsh:&nbsp;no&nbsp;matches&nbsp;found** | Put the link in quotes |
-| **Computer&nbsp;won't&nbsp;sleep** | Figma "plays audio": the silent tone that keeps a background Figma quick. It stops three minutes after the last script ends, or as soon as the bridge stops |
+| **Computer&nbsp;won't&nbsp;sleep** | Figma "plays audio": the silent tone that keeps a background Figma quick. It stops a minute after the last script ends, or as soon as the bridge stops |
 | **Port&nbsp;8788&nbsp;taken** | `figaro` says "port 8788 … is held by another program, not the Figaro bridge" and sends it nothing: it gives the token only to what answers as the bridge (a guard against a stray server, not against one that copies the answer on purpose). `lsof -nP -iTCP:8788 -sTCP:LISTEN` shows who listens. Stop a bridge with `bash start-bridge.sh --stop`, or `start-bridge.ps1 -Stop` on Windows: they stop nothing else. Never `kill` everything `lsof -ti` prints: Figma itself is on that list |
 
 More cases, each with its fix, are in
