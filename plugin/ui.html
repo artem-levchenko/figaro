@@ -154,8 +154,11 @@ svg [stroke="currentColor"] { vector-effect: non-scaling-stroke; stroke-width: 1
    the top left cell, two dimmer cells behind it, a step every 125 ms: round in a second. The
    steps are the window's (spinStep), not an animation's: a smooth one made Figma draw its whole
    window on every refresh of the screen, ~45 % of a core on a 75 Hz one while an agent worked,
-   and a step is one frame. A cell takes its light from <html>'s --lit1 … --lit9, which every
-   step sets, so a grid drawn anew is on the beat at once; the centre stays dim. */
+   and a step is one frame. A step sets <html data-spin>: f0 … f7, the head's place round the
+   edge, or b0 … b7 while a rainbow's light runs back. Its rule below gives every grid --lit1 …
+   --lit9, the light of the head and the two cells behind it, so a grid drawn anew is on the beat
+   at once, and a step restyles only the grids: the nine variables set on <html> itself restyled
+   every element of the window on every step. The centre stays dim. */
 .px { --c: var(--run); flex: none; display: grid; grid-template-columns: repeat(3, 2.5px); gap: 1px; }
 .px i { width: 2.5px; height: 2.5px; border-radius: .5px; background: var(--c); opacity: var(--lit, .1); will-change: opacity; }
 .px i:nth-child(1) { --lit: var(--lit1); }
@@ -166,6 +169,22 @@ svg [stroke="currentColor"] { vector-effect: non-scaling-stroke; stroke-width: 1
 .px i:nth-child(7) { --lit: var(--lit7); }
 .px i:nth-child(8) { --lit: var(--lit8); }
 .px i:nth-child(9) { --lit: var(--lit9); }
+html[data-spin="f0"] .px { --lit1: 1; --lit4: .5; --lit7: .24; }
+html[data-spin="f1"] .px { --lit2: 1; --lit1: .5; --lit4: .24; }
+html[data-spin="f2"] .px { --lit3: 1; --lit2: .5; --lit1: .24; }
+html[data-spin="f3"] .px { --lit6: 1; --lit3: .5; --lit2: .24; }
+html[data-spin="f4"] .px { --lit9: 1; --lit6: .5; --lit3: .24; }
+html[data-spin="f5"] .px { --lit8: 1; --lit9: .5; --lit6: .24; }
+html[data-spin="f6"] .px { --lit7: 1; --lit8: .5; --lit9: .24; }
+html[data-spin="f7"] .px { --lit4: 1; --lit7: .5; --lit8: .24; }
+html[data-spin="b0"] .px { --lit1: 1; --lit2: .5; --lit3: .24; }
+html[data-spin="b1"] .px { --lit2: 1; --lit3: .5; --lit6: .24; }
+html[data-spin="b2"] .px { --lit3: 1; --lit6: .5; --lit9: .24; }
+html[data-spin="b3"] .px { --lit6: 1; --lit9: .5; --lit8: .24; }
+html[data-spin="b4"] .px { --lit9: 1; --lit8: .5; --lit7: .24; }
+html[data-spin="b5"] .px { --lit8: 1; --lit7: .5; --lit4: .24; }
+html[data-spin="b6"] .px { --lit7: 1; --lit4: .5; --lit1: .24; }
+html[data-spin="b7"] .px { --lit4: 1; --lit1: .5; --lit2: .24; }
 /* A click on a grid, in an agent's row or an island's own, turns every grid in the window into a
    rainbow, a colour to each diagonal, whose light runs back, anticlockwise, and another click back
    (`rainbow` on <html>). Minimized, the grid is the card's restore. */
@@ -1957,25 +1976,20 @@ function renderView() {
 }
 
 // The grids' light (see .px): one beat for every grid in the window, a step
-// every SPIN_MS, clockwise, or back in a rainbow. A step sets <html>'s
-// --lit1 … --lit9, the head and the cells behind it, and moves the clocks too
+// every SPIN_MS, clockwise, or back in a rainbow. A step moves the head to the
+// next of the edge's eight places, sets <html data-spin> to it (its rule lights
+// the head and the cells behind it in every grid), and moves the clocks too
 // (tickClocks), so Figma draws one frame a step and none between them. It runs
 // while the window shows a grid, and never for those who ask for less motion:
 // their grids stand half lit.
 const SPIN_MS = 125;
-const RING = [1, 2, 3, 6, 9, 8, 7, 4];  // the edge cells, clockwise from the top left one
-const TAIL = ["1", ".5", ".24"];         // the head, then the cells behind it
 let spinAt = 0;
 let spinTimer = null;
 function spinStep() {
   const root = document.documentElement;
   const back = root.classList.contains("rainbow");
-  spinAt = (spinAt + (back ? RING.length - 1 : 1)) % RING.length;
-  RING.forEach((cell, i) => {
-    const behind = ((back ? i - spinAt : spinAt - i) + RING.length) % RING.length;
-    if (behind < TAIL.length) root.style.setProperty("--lit" + cell, TAIL[behind]);
-    else root.style.removeProperty("--lit" + cell);
-  });
+  spinAt = (spinAt + (back ? 7 : 1)) % 8;
+  root.dataset.spin = (back ? "b" : "f") + spinAt;
   tickClocks();
   spinTimer = setTimeout(spinStep, SPIN_MS);
 }

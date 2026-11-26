@@ -23,6 +23,9 @@ const fs = require("fs");
 const path = require("path");
 const html = fs.readFileSync(path.join(__dirname, "..", "plugin", "ui.html"), "utf8");
 const script = html.slice(html.indexOf("<script>") + "<script>".length, html.lastIndexOf("</script>"));
+// The grids' light for each step of <html data-spin>: {step: {cell: opacity}}, from the window's rules.
+const SPIN = Object.fromEntries([...html.matchAll(/\nhtml\[data-spin="([fb]\d)"\] \.px \{ ([^}]*)\}/g)]
+  .map((m) => [m[1], Object.fromEntries([...m[2].matchAll(/--lit(\d): ([.\d]+);/g)].map((v) => [Number(v[1]), v[2]]))]));
 
 const flush = () => new Promise((r) => setImmediate(r));
 
@@ -110,10 +113,12 @@ function load({ calm = false, layout = null, figma = null } = {}) {
   const listeners = {};
   let hovered = null;  // what the pointer is on (env.hover): {fid, onX}
   const htmlClasses = new Set();  // <html>'s own classes: the rainbow's
-  const lit = {};                  // <html>'s --lit1 … --lit9: the grids' light
+  const rootData = {};             // <html>'s data-*: data-spin, the step of the grids' light
+  const rootStyle = {};            // what the window sets in <html>'s own style
   const document = {
     documentElement: { classList: { toggle: (c) => (htmlClasses.has(c) ? htmlClasses.delete(c) : htmlClasses.add(c)), contains: (c) => htmlClasses.has(c) },
-                       style: { setProperty: (k, v) => { lit[k] = v; }, removeProperty: (k) => { delete lit[k]; } } },
+                       dataset: rootData,
+                       style: { setProperty: (k, v) => { rootStyle[k] = v; }, removeProperty: (k) => { delete rootStyle[k]; } } },
     getElementById: (id) => (elements[id] = elements[id] || {
       textContent: "", innerHTML: "", querySelectorAll: () => [],
     }),
@@ -197,8 +202,10 @@ function load({ calm = false, layout = null, figma = null } = {}) {
       }
     },
     rainbow: () => htmlClasses.has("rainbow"),
-    // the grids' light: {cell: opacity} of the cells it lights
-    lit: () => Object.fromEntries(Object.entries(lit).map(([k, v]) => [Number(k.replace("--lit", "")), v])),
+    // the grids' light: {cell: opacity} of the cells the rule of <html data-spin> lights
+    lit: () => SPIN[rootData.spin] || {},
+    spin: () => rootData.spin,
+    rootStyle: () => ({ ...rootStyle }),
     // The pointer pressed on Minimize; let go on it, or off it.
     press() {
       const cls = new Set();
@@ -905,10 +912,18 @@ const RELEASE = "https://github.com/artem-levchenko/figaro/releases/tag/v1.2.0";
   {
     check("no smooth animation on a grid or the word by it: one made Figma draw its window on every refresh of the screen",
           [/@keyframes (px|shim)\b/.test(html), /\n\.px i \{[^}]*animation/.test(html), /class="shim"/.test(html)], [false, false, false]);
-    check("a cell takes its light from <html>, dim without it, and the centre has none",
+    check("a cell takes its light from its grid, dim without it, and the centre has none",
           [/\n\.px i \{[^}]*opacity: var\(--lit, \.1\);/.test(html),
            [...html.matchAll(/\n\.px i:nth-child\((\d)\) \{ --lit: var\(--lit(\d)\); \}/g)].filter((m) => m[1] === m[2]).map((m) => m[1]).join("")],
           [true, "12346789"]);
+    const RING = [1, 2, 3, 6, 9, 8, 7, 4];  // the edge cells, clockwise from the top left one
+    const lights = (back) => [0, 1, 2, 3, 4, 5, 6, 7].map((s) => JSON.stringify(SPIN[(back ? "b" : "f") + s])
+      === JSON.stringify({ [RING[s]]: "1", [RING[(s + (back ? 1 : 7)) % 8]]: ".5", [RING[(s + (back ? 2 : 6)) % 8]]: ".24" }));
+    check("a step's rule, one for each of the head's eight places, lights the head and the two cells behind it, clockwise or back",
+          [Object.keys(SPIN).length, lights(false).every(Boolean), lights(true).every(Boolean)], [16, true, true]);
+    check("…and sets them on each grid, not on <html>: variables there restyled every element of the window on every step",
+          [/\nhtml\[data-spin="f0"\] \.px \{/.test(html), /documentElement\.style\.setProperty|root\.style\.setProperty/.test(script)],
+          [true, false]);
     check("open and close sweep a sine between 440 and 660 Hz",
           [/open: \[\{ src: "sine", hz: \[440, 660\], env: \[0\.002, 0\.1, 0\.03\], gain: 0\.4 \}\]/.test(html),
            /close: \[\{ src: "sine", hz: \[660, 440\], env: \[0\.002, 0\.1, 0\.03\], gain: 0\.4 \}\]/.test(html)], [true, true]);

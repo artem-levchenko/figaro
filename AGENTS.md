@@ -383,7 +383,11 @@ sends it as `release` instead of `update`, and the bridge refuses `update-now` (
   display in a 5K HiDPI mode that is ~6 ms of CPU a frame, and the grid's old smooth wave took ~45 % of a core
   for as long as an agent was at work (measured live). So what moves while agents work steps on the window's
   own timer (`spinStep`, 8 a second, the clocks on the same beat), and a clock's text is written only when it
-  changes. A transition that ends, as an island's opening, costs only its own frames.
+  changes. A step costs Figma more than an animation's frame, ~14 ms of CPU against ~4: ~11 % of a core
+  while an agent is at work, against ~32 % for the wave in the same window (measured live). So a step changes
+  one attribute, `<html data-spin>`, and the grids' rules light their cells: a variable set on `<html>` itself
+  restyled every element of the window on every step. A transition that ends, as an island's opening, costs
+  only its own frames.
 - **The keep-awake tone.** While scripts run, the window plays an inaudible tone (20 Hz, −66 dBFS); without it
   Chromium throttles a background Figma to up to a minute per step. Meanwhile macOS doesn't sleep
   (`pmset -g assertions` shows Figma "Playing audio"). The tone stops a minute after the last script ends
